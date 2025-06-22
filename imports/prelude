@@ -1,3 +1,21 @@
+-- Logical Combinators
+
+i = \x -> x
+
+s = \x -> \y -> \z -> x z (y z)
+
+k = \x -> \y -> x
+
+b = \x -> \y -> \z -> x (y z)
+
+y = \f -> (\x -> f (x x)) (\x -> f (x x))
+
+t = \x -> \y -> y x
+
+m = \x -> x x
+
+o = (\x -> x x) (\x -> x x)
+
 -- Data types
 
 data Maybe = Just a | Nothing
