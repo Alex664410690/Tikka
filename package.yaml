@@ -1,0 +1,74 @@
+name:                tikka
+version:             0.1.0.0
+github:              Alex664410690/Tikka
+license:             BSD-3-Clause
+author:              Alex Hobbs and Alex Dixon
+maintainer:          alexhobbs.0515@gmail.com
+copyright:           2026 Alex Hobbs and Alex Dixon
+
+extra-source-files:
+- README.md
+
+# To avoid duplicated efforts in documentation and dealing with the
+# complications of embedding Haddock markup inside cabal files, it is
+# common to point users to the README.md file.
+description:         Please see the README on GitHub at <https://github.com/Alex664410690/Tikka#readme>
+
+default-language: GHC2021
+
+dependencies:
+- base >= 4.7 && < 5
+- megaparsec
+- mtl
+- text
+- parser-combinators
+- ghcid
+- flags-applicative
+- monomer
+- text-show
+- lens
+- ansi-terminal
+- containers
+- data-default
+- split
+- Clipboard
+- strict
+- string-interpolate
+
+ghc-options:
+- -Wall
+- -Wno-orphans
+- -Wno-unused-do-bind
+- -Wcompat
+- -Widentities
+- -Wincomplete-record-updates
+- -Wincomplete-uni-patterns
+- -Wmissing-home-modules
+- -Wpartial-fields
+- -Wredundant-constraints
+
+library:
+  source-dirs: src
+
+executables:
+  tikka:
+    main:                Main.hs
+    source-dirs:         app
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    - -optl-mconsole
+    dependencies:
+    - tikka
+
+  # Uncomment this and comment the executable above if on Linux.
+  # tikka-linux:
+  #   main:                Main.hs
+  #   source-dirs:         app
+  #   ghc-options:
+  #   - -threaded
+  #   - -rtsopts
+  #   - -with-rtsopts=-N
+  #   dependencies:
+  #   - tikka
