@@ -199,9 +199,17 @@ output ls t v "main" = ("main " ++ head (steps t v ls)) : tail (steps t v ls)
 output ls t v _ = steps t v ls
 
 -- Gets the list of evaluation steps and evaluation
+-- 1st arg = 'trace' flag
+-- 2nd arg = 'verbosity' flag
+-- 3rd arg = evaluation steps
 steps :: Int -> Int -> [Term] -> [String]
 steps t v ls = map fst (mapSteps t v ls True)
 
+-- Gets all evaluation steps
+-- 1st arg = 'trace' flag
+-- 2nd arg = 'verbosity' flag
+-- 3rd arg = evaluation steps
+-- 4th arg = bool stating whether the previous step was visible
 mapSteps :: Int -> Int -> [Term] -> Bool -> [(String, Bool)]
 mapSteps _ _ [] _ = []
 mapSteps t v (l:ls) vis
