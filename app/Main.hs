@@ -20,7 +20,7 @@ import System.IO.Error (isDoesNotExistError)
 -- Sets up the "help" flag for the compiler
 flagsParser :: FlagsParser Flags
 flagsParser = Flags
-  <$> (flag intVal "trace" "Level of evaluation tracing, 1 - 3" <|> pure 1)
+  <$> (flag intVal "trace" "Level of evaluation tracing, 1 - 4" <|> pure 1)
   <*> (flag intVal "verb" "Level of explanantion verbosity, 1 - 4" <|> pure 1)
   <*> (flag stringVal "dump" "Optional file to dump the desugared code to" <|> pure "")
   <*> boolFlag "stc" "Flag to enable static type checking"
