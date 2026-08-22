@@ -229,6 +229,9 @@ outputTrace ls t v "main" = ("main " ++ head (steps' t v ls)) : tail (steps' t v
 outputTrace ls t v _ = steps t v ls -- TRACE blocks do not stop trace for repl
 
 -- Gets the list of evaluation steps and evaluation, if inside of a TRACE block
+-- 1st arg = 'trace' flag
+-- 2nd arg = 'verbosity' flag
+-- 3rd arg = evaluation steps
 steps' :: Int -> Int -> [Term] -> [String]
 steps' t v [l] = [fst $ fst $ outputEvaluation t v l]
 steps' t v ls = map fst (filter snd (mapSteps t v (init ls) True)) ++ [fst $ fst $ outputEvaluation t v (last ls)]
