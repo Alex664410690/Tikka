@@ -200,7 +200,16 @@ output ls t v _ = steps t v ls
 
 -- Gets the list of evaluation steps and evaluation
 steps :: Int -> Int -> [Term] -> [String]
-steps t v ls = filter (not . null) $ map (fst . outputEvaluation t v) ls
+steps t v ls = map fst (mapSteps t v ls True)
+
+mapSteps :: Int -> Int -> [Term] -> Bool -> [(String, Bool)]
+mapSteps _ _ [] _ = []
+mapSteps t v (l:ls) vis
+  | vis && not doprint = (fst eval ++ "    [...]", snd eval) : mapSteps t v ls doprint
+  | doprint = eval : mapSteps t v ls doprint
+  | otherwise = mapSteps t v ls doprint
+    where
+      (eval, doprint) = outputEvaluation t v l
 
 -- Print the given evaluation steps inside trace blocks
 -- 1st arg = evaluation steps
@@ -213,20 +222,19 @@ outputTrace ls t v _ = steps t v ls -- TRACE blocks do not stop trace for repl
 
 -- Gets the list of evaluation steps and evaluation, if inside of a TRACE block
 steps' :: Int -> Int -> [Term] -> [String]
-steps' t v [l] = [fst $ outputEvaluation t v l]
-steps' t v ls = map fst (filter (\(x, y) -> y && (not . null) x) (map (outputEvaluation t v) (init ls))) ++ [fst $ outputEvaluation t v (last ls)]
+steps' t v [l] = [fst $ fst $ outputEvaluation t v l]
+steps' t v ls = map fst (filter snd (mapSteps t v (init ls) True)) ++ [fst $ fst $ outputEvaluation t v (last ls)]
 
 -- Outputs one step of evaluation
 -- 1st arg = 'trace' flag
 -- 2nd arg = 'verbosity' flag
 -- 3rd arg = evaluation step
-outputEvaluation :: Int -> Int -> Term -> (String, Bool)
-outputEvaluation t 1 l = case nextAction l t 1 False of
-  ("noprint", _) -> ("", False)
-  (_, b) -> ("= " ++ show l, b)
-outputEvaluation t v l = case nextAction l t v False of
-  ("noprint", _) -> ("", False)
-  (x, b) -> ("= " ++ show l ++ x, b)
+outputEvaluation :: Int -> Int -> Term -> ((String, Bool), Bool)
+outputEvaluation t v l = (("= " ++ show l ++ expl, snd action), doprint)
+  where
+    action = nextAction l t v False
+    doprint = fst action /= "noprint"
+    expl = if v == 1 || not doprint then "" else fst action
 
 -- Determine the explanation that should be given for a lambda evaluation step
 -- 1st arg = evaluation step
