@@ -93,10 +93,14 @@ runRepl flags file = do
 prettyPrint :: String -> IO ()
 prettyPrint l = do
   let traceOutput = unpack $ head (splitOn "    [" (pack l))
-  let traceExplanation = if null $ tail (splitOn "    [" (pack l)) then "" else unpack $ Data.Text.init $ head $ tail (splitOn "    [" (pack l))
+  let traceSkip = if null $ tail (splitOn "    [...Skip" (pack l)) then "" else unpack $ Data.Text.init $ head $ tail (splitOn "    [" (pack l))
+  let traceExplanation = if not (null traceSkip) || null (tail (splitOn "    [" (pack l))) then "" else unpack $ Data.Text.init $ head $ tail (splitOn "    [" (pack l))
   putStr traceOutput
   setSGR [ SetColor Foreground Vivid Yellow ]
   unless (null traceExplanation) $ putStr $ "    [" ++ traceExplanation ++ "]"
+  setSGR [ SetColor Foreground Vivid White ]
+  setSGR [ SetColor Foreground Vivid Green ]
+  unless (null traceSkip) $ putStr $ "    [" ++ traceSkip ++ "]"
   setSGR [ SetColor Foreground Vivid White ]
   putStrLn "\n"
 

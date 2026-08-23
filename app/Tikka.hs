@@ -203,21 +203,29 @@ output ls t v _ = steps t v ls
 -- 2nd arg = 'verbosity' flag
 -- 3rd arg = evaluation steps
 steps :: Int -> Int -> [Term] -> [String]
-steps t v ls = map fst (mapSteps t v ls True)
+steps t v ls = map fst (mapSteps t v ls)
 
 -- Gets all evaluation steps
 -- 1st arg = 'trace' flag
 -- 2nd arg = 'verbosity' flag
 -- 3rd arg = evaluation steps
 -- 4th arg = bool stating whether the previous step was visible
-mapSteps :: Int -> Int -> [Term] -> Bool -> [(String, Bool)]
-mapSteps _ _ [] _ = []
-mapSteps t v (l:ls) vis
-  | vis && not doprint = (fst eval ++ "    [...]", snd eval) : mapSteps t v ls doprint
-  | doprint = eval : mapSteps t v ls doprint
-  | otherwise = mapSteps t v ls doprint
+mapSteps :: Int -> Int -> [Term] -> [(String, Bool)]
+mapSteps _ _ [] = []
+mapSteps t v (l:ls)
+  | doprint = eval : mapSteps t v ls
+  | skippedSteps == 0 = (fst eval ++ "    [...Skipped...]", snd eval) : mapSteps t v (drop skippedSteps ls)
+  | skippedSteps == 1 = (fst eval ++ "    [...Skipping 1 step...]", snd eval) : mapSteps t v (drop skippedSteps ls)
+  | otherwise = (fst eval ++ "    [...Skipping " ++ show skippedSteps ++ " steps...]", snd eval) : mapSteps t v (drop skippedSteps ls)
     where
       (eval, doprint) = outputEvaluation t v l
+      skippedSteps = skipSteps t v ls
+
+skipSteps :: Int -> Int -> [Term] -> Int
+skipSteps _ _ [] = 0
+skipSteps t v (l:ls) = if doprint then 0 else 1 + skipSteps t v ls
+  where
+      (_, doprint) = outputEvaluation t v l
 
 -- Print the given evaluation steps inside trace blocks
 -- 1st arg = evaluation steps
@@ -234,7 +242,7 @@ outputTrace ls t v _ = steps t v ls -- TRACE blocks do not stop trace for repl
 -- 3rd arg = evaluation steps
 steps' :: Int -> Int -> [Term] -> [String]
 steps' t v [l] = [fst $ fst $ outputEvaluation t v l]
-steps' t v ls = map fst (filter snd (mapSteps t v (init ls) True)) ++ [fst $ fst $ outputEvaluation t v (last ls)]
+steps' t v ls = map fst (filter snd (mapSteps t v (init ls))) ++ [fst $ fst $ outputEvaluation t v (last ls)]
 
 -- Outputs one step of evaluation
 -- 1st arg = 'trace' flag
