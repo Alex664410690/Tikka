@@ -118,14 +118,16 @@ evalExpr s (UnOp o x) = do
     appFn Ceiling = fromIntegral @Integer @Double . ceiling
 
   case evalTerm s x of
-    Right x' -> case getPrimitive x' of
-      Nothing -> pure x'
-      Just v -> case evalUnOp v (appFn o) of
-        Left err -> do
-          tell [err]
-          done (UnOp o x')
-        Right d -> done (Val $ Double d)
+    Right x' -> if x == x' || o == Negation then case getPrimitive x' of -- Do not show negation step
+        Nothing -> done (UnOp o x')
+        Just v -> case evalUnOp v (appFn o) of
+          Left err -> do
+            tell [err]
+            done (UnOp o x')
+          Right d -> done (Val $ Double d)
+      else done (UnOp o x')
     Left es -> tell es >> done (UnOp o x)
+
 -- Cons and append get their own special logic
 evalExpr _ (BinOp Cons x (Exp (Val (List [])))) = done $ Val $ List [x]
 evalExpr fs v@(BinOp Cons x (Exp (Val (List l)))) =

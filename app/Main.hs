@@ -20,7 +20,7 @@ import System.IO.Error (isDoesNotExistError)
 -- Sets up the "help" flag for the compiler
 flagsParser :: FlagsParser Flags
 flagsParser = Flags
-  <$> (flag intVal "trace" "Level of evaluation tracing, 1 - 3" <|> pure 1)
+  <$> (flag intVal "trace" "Level of evaluation tracing, 1 - 4" <|> pure 1)
   <*> (flag intVal "verb" "Level of explanantion verbosity, 1 - 4" <|> pure 1)
   <*> (flag stringVal "dump" "Optional file to dump the desugared code to" <|> pure "")
   <*> boolFlag "stc" "Flag to enable static type checking"
@@ -93,10 +93,14 @@ runRepl flags file = do
 prettyPrint :: String -> IO ()
 prettyPrint l = do
   let traceOutput = unpack $ head (splitOn "    [" (pack l))
-  let traceExplanation = if null $ tail (splitOn "    [" (pack l)) then "" else unpack $ Data.Text.init $ head $ tail (splitOn "    [" (pack l))
+  let traceSkip = if null $ tail (splitOn "    [...Skip" (pack l)) then "" else unpack $ Data.Text.init $ head $ tail (splitOn "    [" (pack l))
+  let traceExplanation = if not (null traceSkip) || null (tail (splitOn "    [" (pack l))) then "" else unpack $ Data.Text.init $ head $ tail (splitOn "    [" (pack l))
   putStr traceOutput
   setSGR [ SetColor Foreground Vivid Yellow ]
   unless (null traceExplanation) $ putStr $ "    [" ++ traceExplanation ++ "]"
+  setSGR [ SetColor Foreground Vivid White ]
+  setSGR [ SetColor Foreground Vivid Green ]
+  unless (null traceSkip) $ putStr $ "    [" ++ traceSkip ++ "]"
   setSGR [ SetColor Foreground Vivid White ]
   putStrLn "\n"
 

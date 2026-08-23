@@ -109,7 +109,7 @@ parseAndEvaluate :: Flags -> String -> String -> Either String (String, [String]
 parseAndEvaluate flags file func = case parseFile file func (stc flags) of
   Left s -> if clamp (1, 4) (verbosity flags) > 2 then Left s else Left $ printParseError (lines s)
   Right (evalSteps, errors, deSugared) -> do
-    let t = clamp (1, 3) (tracing flags)
+    let t = clamp (1, 4) (tracing flags)
     let v = clamp (1, 4) (verbosity flags)
     let toPrint = if isTrace then outputTrace evalSteps t v func else output evalSteps t v func
     if stc flags
@@ -199,8 +199,33 @@ output ls t v "main" = ("main " ++ head (steps t v ls)) : tail (steps t v ls)
 output ls t v _ = steps t v ls
 
 -- Gets the list of evaluation steps and evaluation
+-- 1st arg = 'trace' flag
+-- 2nd arg = 'verbosity' flag
+-- 3rd arg = evaluation steps
 steps :: Int -> Int -> [Term] -> [String]
-steps t v ls = filter (not . null) $ map (fst . outputEvaluation t v) ls
+steps t v ls = map fst (mapSteps t v ls)
+
+-- Gets all evaluation steps
+-- 1st arg = 'trace' flag
+-- 2nd arg = 'verbosity' flag
+-- 3rd arg = evaluation steps
+-- 4th arg = bool stating whether the previous step was visible
+mapSteps :: Int -> Int -> [Term] -> [(String, Bool)]
+mapSteps _ _ [] = []
+mapSteps t v (l:ls)
+  | doprint = eval : mapSteps t v ls
+  | skippedSteps == 0 = (fst eval ++ "    [...Skipped...]", snd eval) : mapSteps t v (drop skippedSteps ls)
+  | skippedSteps == 1 = (fst eval ++ "    [...Skipping 1 step...]", snd eval) : mapSteps t v (drop skippedSteps ls)
+  | otherwise = (fst eval ++ "    [...Skipping " ++ show skippedSteps ++ " steps...]", snd eval) : mapSteps t v (drop skippedSteps ls)
+    where
+      (eval, doprint) = outputEvaluation t v l
+      skippedSteps = skipSteps t v ls
+
+skipSteps :: Int -> Int -> [Term] -> Int
+skipSteps _ _ [] = 0
+skipSteps t v (l:ls) = if doprint then 0 else 1 + skipSteps t v ls
+  where
+      (_, doprint) = outputEvaluation t v l
 
 -- Print the given evaluation steps inside trace blocks
 -- 1st arg = evaluation steps
@@ -212,21 +237,23 @@ outputTrace ls t v "main" = ("main " ++ head (steps' t v ls)) : tail (steps' t v
 outputTrace ls t v _ = steps t v ls -- TRACE blocks do not stop trace for repl
 
 -- Gets the list of evaluation steps and evaluation, if inside of a TRACE block
+-- 1st arg = 'trace' flag
+-- 2nd arg = 'verbosity' flag
+-- 3rd arg = evaluation steps
 steps' :: Int -> Int -> [Term] -> [String]
-steps' t v [l] = [fst $ outputEvaluation t v l]
-steps' t v ls = map fst (filter (\(x, y) -> y && (not . null) x) (map (outputEvaluation t v) (init ls))) ++ [fst $ outputEvaluation t v (last ls)]
+steps' t v [l] = [fst $ fst $ outputEvaluation t v l]
+steps' t v ls = map fst (filter snd (mapSteps t v (init ls))) ++ [fst $ fst $ outputEvaluation t v (last ls)]
 
 -- Outputs one step of evaluation
 -- 1st arg = 'trace' flag
 -- 2nd arg = 'verbosity' flag
 -- 3rd arg = evaluation step
-outputEvaluation :: Int -> Int -> Term -> (String, Bool)
-outputEvaluation t 1 l = case nextAction l t 1 False of
-  ("noprint", _) -> ("", False)
-  (_, b) -> ("= " ++ show l, b)
-outputEvaluation t v l = case nextAction l t v False of
-  ("noprint", _) -> ("", False)
-  (x, b) -> ("= " ++ show l ++ x, b)
+outputEvaluation :: Int -> Int -> Term -> ((String, Bool), Bool)
+outputEvaluation t v l = (("= " ++ show l ++ expl, snd action), doprint)
+  where
+    action = nextAction l t v False
+    doprint = fst action /= "noprint"
+    expl = if v == 1 || not doprint then "" else fst action
 
 -- Determine the explanation that should be given for a lambda evaluation step
 -- 1st arg = evaluation step
@@ -253,123 +280,122 @@ nextActionExpr (Var var) _ v b = case v of
   2 -> ("    [Function Replacement]", b)
   3 -> ("    [Replacement of identifier '" ++ var ++ "' with its function body]", b)
   _ -> ("    [I will replace the function identifier '" ++ var ++ "' with its function body]", b)
--- nextActionExpr (Function l) t v b = nextAction l t v b
 nextActionExpr (Val x) t v b = nextActionVal x t v b
 nextActionExpr (Error _) _ _ _ = ("", False)
 nextActionExpr (UnOp Negation (Exp (Var _))) _ _ _ = ("noprint", False) -- negation function does not need an eval step
 nextActionExpr (UnOp Negation (Exp (Val _))) _ _ _ = ("noprint", False) -- negation function does not need an eval step
 nextActionExpr (UnOp Negation e) t v b = nextAction e t v b
-nextActionExpr (UnOp Floor (Exp (Val _))) 2 _ _ = ("noprint", False)
-nextActionExpr (UnOp Floor (Exp (Val x))) _ v b = case v of
+nextActionExpr (UnOp Floor (Exp (Val x))) 4 v b = case v of
   2 -> ("    [Floor]", b)
   3 -> ("    [Floor of " ++ show x ++ "]", b)
   _ -> ("    [I will round " ++ show x ++ " down to the nearest integer]", b)
+nextActionExpr (UnOp Floor (Exp (Val _))) _ _ _ = ("noprint", False)
 nextActionExpr (UnOp Floor x) t v b = nextAction x t v b
-nextActionExpr (UnOp Ceiling (Exp (Val _))) 2 _ _ = ("noprint", False)
-nextActionExpr (UnOp Ceiling (Exp (Val x))) _ v b = case v of
+nextActionExpr (UnOp Ceiling (Exp (Val x))) 4 v b = case v of
   2 -> ("    [Ceiling]", b)
   3 -> ("    [Ceiling of " ++ show x ++ "]", b)
   _ -> ("    [I will round " ++ show x ++ " up to the nearest integer]", b)
+nextActionExpr (UnOp Ceiling (Exp (Val _))) _ _ _ = ("noprint", False)
 nextActionExpr (UnOp Ceiling x) t v b = nextAction x t v b
-nextActionExpr (BinOp Sum (Exp (Val _)) (Exp (Val _))) 2 _ _ = ("noprint", False)
-nextActionExpr (BinOp Sum (Exp (Val x)) (Exp (Val y))) _ v b = case v of
+nextActionExpr (BinOp Sum (Exp (Val x)) (Exp (Val y))) 4 v b = case v of
   2 -> ("    [Addition]", b)
   3 -> ("    [Addition of " ++ show x ++ " and " ++ show y ++ "]", b)
   _ -> ("    [I will add together " ++ show x ++ " and " ++ show y ++ "]", b)
+nextActionExpr (BinOp Sum (Exp (Val _)) (Exp (Val _))) _ _ _ = ("noprint", False)
 nextActionExpr (BinOp Sum (Exp (Val _)) y) t v b = nextAction y t v b
 nextActionExpr (BinOp Sum x _) t v b = nextAction x t v b
-nextActionExpr (BinOp Subtr (Exp (Val _)) (Exp (Val _))) 2 _ _ = ("noprint", False)
-nextActionExpr (BinOp Subtr (Exp (Val x)) (Exp (Val y))) _ v b = case v of
+nextActionExpr (BinOp Subtr (Exp (Val x)) (Exp (Val y))) 4 v b = case v of
   2 -> ("    [Subtraction]", b)
   3 -> ("    [Subtraction of " ++ show y ++ " from " ++ show x ++ "]", b)
   _ -> ("    [I will subtract " ++ show y ++ " from " ++ show x ++ "]", b)
+nextActionExpr (BinOp Subtr (Exp (Val _)) (Exp (Val _))) _ _ _ = ("noprint", False)
 nextActionExpr (BinOp Subtr (Exp (Val _)) y) t v b = nextAction y t v b
 nextActionExpr (BinOp Subtr x _) t v b = nextAction x t v b
-nextActionExpr (BinOp Product (Exp (Val _)) (Exp (Val _))) 2 _ _ = ("noprint", False)
-nextActionExpr (BinOp Product (Exp (Val x)) (Exp (Val y))) _ v b = case v of
+nextActionExpr (BinOp Product (Exp (Val x)) (Exp (Val y))) 4 v b = case v of
   2 -> ("    [Product]", b)
   3 -> ("    [Product of " ++ show x ++ " and " ++ show y ++ "]", b)
   _ -> ("    [I will multiply together " ++ show x ++ " and " ++ show y ++ "]", b)
+nextActionExpr (BinOp Product (Exp (Val _)) (Exp (Val _))) _ _ _ = ("noprint", False)
 nextActionExpr (BinOp Product (Exp (Val _)) y) t v b = nextAction y t v b
 nextActionExpr (BinOp Product x _) t v b = nextAction x t v b
-nextActionExpr (BinOp Division (Exp (Val _)) (Exp (Val _))) 2 _ _ = ("noprint", False)
-nextActionExpr (BinOp Division (Exp (Val x)) (Exp (Val y))) _ v b = case v of
+nextActionExpr (BinOp Division (Exp (Val x)) (Exp (Val y))) 4 v b = case v of
   2 -> ("    [Division]", b)
   3 -> ("    [Division of " ++ show x ++ " by " ++ show y ++ "]", b)
   _ -> ("    [I will divide " ++ show x ++ " by " ++ show y ++ "]", b)
+nextActionExpr (BinOp Division (Exp (Val _)) (Exp (Val _))) _ _ _ = ("noprint", False)
 nextActionExpr (BinOp Division (Exp (Val _)) y) t v b = nextAction y t v b
 nextActionExpr (BinOp Division x _) t v b = nextAction x t v b
-nextActionExpr (BinOp Cons _ (Exp (Val _))) 2 _ _ = ("noprint", False)
-nextActionExpr (BinOp Cons x (Exp (Val y))) _ v b = case v of
+nextActionExpr (BinOp Cons x (Exp (Val y))) 4 v b = case v of
   2 -> ("    [Cons]", b)
   3 -> ("    [Cons of " ++ show x ++ " and " ++ show y ++ "]", b)
   _ -> ("    [I will prepend " ++ show x ++ " to the list " ++ show y ++ "]", b)
+nextActionExpr (BinOp Cons _ (Exp (Val _))) _ _ _ = ("noprint", False)
 nextActionExpr (BinOp Cons _ y) t v b = nextAction y t v b
-nextActionExpr (BinOp Append (Exp (Val _)) (Exp (Val _))) 2 _ _ = ("noprint", False)
-nextActionExpr (BinOp Append (Exp (Val x)) (Exp (Val y))) _ v b = case v of
+nextActionExpr (BinOp Append (Exp (Val x)) (Exp (Val y))) 4 v b = case v of
   2 -> ("    [Append]", b)
   3 -> ("    [Append of " ++ show y ++ " to " ++ show x ++ "]", b)
   _ -> ("    [I will Append the list " ++ show y ++ " to the list " ++ show x ++ "]", b)
+nextActionExpr (BinOp Append (Exp (Val _)) (Exp (Val _))) _ _ _ = ("noprint", False)
 nextActionExpr (BinOp Append (Exp (Val _)) y) t v b = nextAction y t v b
 nextActionExpr (BinOp Append x _) t v b = nextAction x t v b
 nextActionExpr (Case (Exp (Val x)) ys) t v b = case nextActionVal x t v b of
   ("", _) -> nextActionCase x ys t v b
   r -> r
 nextActionExpr (Case x _) t v b = nextAction x t v b
-nextActionExpr (BinOp And (Exp (Val _)) (Exp (Val _))) 2 _ _ = ("noprint", False)
-nextActionExpr (BinOp And (Exp (Val x)) (Exp (Val y))) _ v b = case v of
+nextActionExpr (BinOp And (Exp (Val x)) (Exp (Val y))) 4 v b = case v of
   2 -> ("    [And]", b)
   3 -> ("    [And of " ++ show x ++ " and " ++ show y ++ "]", b)
   _ -> ("    [I will check if both " ++ show x ++ " and " ++ show y ++ " are True]", b)
+nextActionExpr (BinOp And (Exp (Val _)) (Exp (Val _))) _ _ _ = ("noprint", False)
 nextActionExpr (BinOp And (Exp (Val _)) y) t v b = nextAction y t v b
 nextActionExpr (BinOp And x _) t v b = nextAction x t v b
-nextActionExpr (BinOp Or (Exp (Val _)) (Exp (Val _))) 2 _ _ = ("noprint", False)
-nextActionExpr (BinOp Or (Exp (Val x)) (Exp (Val y))) _ v b = case v of
+nextActionExpr (BinOp Or (Exp (Val x)) (Exp (Val y))) 4 v b = case v of
   2 -> ("    [Or]", b)
   3 -> ("    [Or of " ++ show x ++ " and " ++ show y ++ "]", b)
   _ -> ("    [I will check if either " ++ show x ++ " or " ++ show y ++ " are True]", b)
+nextActionExpr (BinOp Or (Exp (Val _)) (Exp (Val _))) _ _ _ = ("noprint", False)
 nextActionExpr (BinOp Or (Exp (Val _)) y) t v b = nextAction y t v b
 nextActionExpr (BinOp Or x _) t v b = nextAction x t v b
-nextActionExpr (BinOp Eq (Exp (Val _)) (Exp (Val _))) 2 _ _ = ("noprint", False)
-nextActionExpr (BinOp Eq (Exp (Val x)) (Exp (Val y))) _ v b = case v of
+nextActionExpr (BinOp Eq (Exp (Val x)) (Exp (Val y))) 4 v b = case v of
   2 -> ("    [Equality]", b)
   3 -> ("    [Equality of " ++ show x ++ " and " ++ show y ++ "]", b)
   _ -> ("    [I will check if " ++ show x ++ " and " ++ show y ++ " are equal]", b)
+nextActionExpr (BinOp Eq (Exp (Val _)) (Exp (Val _))) _ _ _ = ("noprint", False)
 nextActionExpr (BinOp Eq (Exp (Val _)) y) t v b = nextAction y t v b
 nextActionExpr (BinOp Eq x _) t v b = nextAction x t v b
-nextActionExpr (BinOp NEq (Exp (Val _)) (Exp (Val _))) 2 _ _ = ("noprint", False)
-nextActionExpr (BinOp NEq (Exp (Val x)) (Exp (Val y))) _ v b = case v of
+nextActionExpr (BinOp NEq (Exp (Val x)) (Exp (Val y))) 4 v b = case v of
   2 -> ("    [Non-Equality]", b)
   3 -> ("    [Non-Equality of " ++ show x ++ " and " ++ show y ++ "]", b)
   _ -> ("    [I will check if " ++ show x ++ " and " ++ show y ++ " are not equal]", b)
+nextActionExpr (BinOp NEq (Exp (Val _)) (Exp (Val _))) _ _ _ = ("noprint", False)
 nextActionExpr (BinOp NEq (Exp (Val _)) y) t v b = nextAction y t v b
 nextActionExpr (BinOp NEq x _) t v b = nextAction x t v b
-nextActionExpr (BinOp LT (Exp (Val _)) (Exp (Val _))) 2 _ _ = ("noprint", False)
-nextActionExpr (BinOp LT (Exp (Val x)) (Exp (Val y))) _ v b = case v of
+nextActionExpr (BinOp LT (Exp (Val x)) (Exp (Val y))) 4 v b = case v of
   2 -> ("    [Less Than]", b)
   3 -> ("    [Less Than between " ++ show x ++ " and " ++ show y ++ "]", b)
   _ -> ("    [I will check if " ++ show x ++ " is less than " ++ show y ++ "]", b)
+nextActionExpr (BinOp LT (Exp (Val _)) (Exp (Val _))) _ _ _ = ("noprint", False)
 nextActionExpr (BinOp LT (Exp (Val _)) y) t v b = nextAction y t v b
 nextActionExpr (BinOp LT x _) t v b = nextAction x t v b
-nextActionExpr (BinOp LE (Exp (Val _)) (Exp (Val _))) 2 _ _ = ("noprint", False)
-nextActionExpr (BinOp LE (Exp (Val x)) (Exp (Val y))) _ v b = case v of
+nextActionExpr (BinOp LE (Exp (Val x)) (Exp (Val y))) 4 v b = case v of
   2 -> ("    [Less Than or Equal]", b)
   3 -> ("    [Less Than or Equal between " ++ show x ++ " and " ++ show y ++ "]", b)
   _ -> ("    [I will check if " ++ show x ++ " is less than or equal to " ++ show y ++ "]", b)
+nextActionExpr (BinOp LE (Exp (Val _)) (Exp (Val _))) _ _ _ = ("noprint", False)
 nextActionExpr (BinOp LE (Exp (Val _)) y) t v b = nextAction y t v b
 nextActionExpr (BinOp LE x _) t v b = nextAction x t v b
-nextActionExpr (BinOp GT (Exp (Val _)) (Exp (Val _))) 2 _ _ = ("noprint", False)
-nextActionExpr (BinOp GT (Exp (Val x)) (Exp (Val y))) _ v b = case v of
+nextActionExpr (BinOp GT (Exp (Val x)) (Exp (Val y))) 4 v b = case v of
   2 -> ("    [Greater Than]", b)
   3 -> ("    [Greater Than between " ++ show x ++ " and " ++ show y ++ "]", b)
   _ -> ("    [I will check if " ++ show x ++ " is greater than " ++ show y ++ "]", b)
+nextActionExpr (BinOp GT (Exp (Val _)) (Exp (Val _))) _ _ _ = ("noprint", False)
 nextActionExpr (BinOp GT (Exp (Val _)) y) t v b = nextAction y t v b
 nextActionExpr (BinOp GT x _) t v b = nextAction x t v b
-nextActionExpr (BinOp GE (Exp (Val _)) (Exp (Val _))) 2 _ _ = ("noprint", False)
-nextActionExpr (BinOp GE (Exp (Val x)) (Exp (Val y))) _ v b = case v of
+nextActionExpr (BinOp GE (Exp (Val x)) (Exp (Val y))) 4 v b = case v of
   2 -> ("    [Greater Than or Equal]", b)
   3 -> ("    [Greater Than or Equal between " ++ show x ++ " and " ++ show y ++ "]", b)
   _ -> ("    [I will check if " ++ show x ++ " is greater than or equal to " ++ show y ++ "]", b)
+nextActionExpr (BinOp GE (Exp (Val _)) (Exp (Val _))) _ _ _ = ("noprint", False)
 nextActionExpr (BinOp GE (Exp (Val _)) y) t v b = nextAction y t v b
 nextActionExpr (BinOp GE x _) t v b = nextAction x t v b
 
@@ -400,6 +426,7 @@ nextActionVal _ _ _ b = ("", b)
 -- 4th arg = 'verbosity' flag
 -- 5th arg = bool to denote if we are currently inside a TRACE block
 nextActionCase :: Value -> [(Term, Term)] -> Int -> Int -> Bool -> (String, Bool)
+nextActionCase _ _ 2 _ _ = ("noprint", False)
 nextActionCase _ [] _ v b = case v of
   2 -> ("    [Pattern Simplification & Possible Case Selection]", b)
   3 -> ("    [Pattern Simplification & Possible Case Selection]", b)

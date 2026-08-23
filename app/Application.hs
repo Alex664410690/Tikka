@@ -70,8 +70,9 @@ verbFlagToText _ = error "Unknown verbosity level"
 
 traceFlagToText :: Int -> Text
 traceFlagToText 1 = "No Trace"
-traceFlagToText 2 = "Reduced"
-traceFlagToText 3 = "Full"
+traceFlagToText 2 = "Reduced Case Selection"
+traceFlagToText 3 = "Reduced Operations"
+traceFlagToText 4 = "Full"
 traceFlagToText _ = error "Unknown tracing level"
 
 traceRow :: AppModel -> Int -> Text -> WidgetNode AppModel AppEvent
@@ -107,7 +108,7 @@ buildUI _ model = widgetTree
                 , button "Save" SaveCode
                 ]
             , spacer
-            , box_ [sizeReqUpdater (\(_, y) -> (width 110, y))] $
+            , box_ [sizeReqUpdater (\(_, y) -> (width 230, y))] $
                 vstack
                   [ label "Trace level:"
                   , spacer
@@ -289,7 +290,7 @@ runApp flags args = do
   config =
     if os == "mingw32"
       then
-        [ appWindowState (MainWindowNormal (850, 500))
+        [ appWindowState (MainWindowNormal (1000, 600))
         , appWindowTitle "Tikka"
         , appWindowIcon "./assets/icons/lambda.bmp" -- Term icon created by Freepik - Flaticon
         , appTheme customAppTheme
@@ -300,7 +301,7 @@ runApp flags args = do
         , appInitEvent AppInit
         ]
       else
-        [ appWindowState (MainWindowNormal (850, 500))
+        [ appWindowState (MainWindowNormal (1000, 600))
         , appWindowTitle "Tikka"
         , appWindowIcon "./assets/icons/lambda.bmp" -- Term icon created by Freepik - Flaticon
         , appDisableAutoScale True

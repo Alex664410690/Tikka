@@ -12,13 +12,14 @@ Tikka should be run from the main directory (due to the module system's reliance
 
 The list of available options and what they do can be found by running `./dist/tikka --help`. The *repl* and *visual* flags are not compatible with one another, so should not be used simultaneously. For example, the following would run *sample.hs* with static type checking enabled, dump the desugared code to *output.txt* and trace the evaluation in full with concise explanation, before entering REPL mode:
 
-`./dist/tikka sample.hs --stc --dump=output.txt --trace=3 --verb=2 --repl`
+`./dist/tikka sample.hs --stc --dump=output.txt --trace=4 --verb=2 --repl`
 
 The available levels of evaluation tracing are:
 
 1. No trace, only displays the final result (default)
-2. Minimal trace, shows all steps of evaluation other than basic arithmetic, boolean and list operations
-3. Full trace, shows all steps of evaluation
+2. Minimal trace, excludes all pattern matching, case selection and operations
+3. Reduced trace, shows all steps of evaluation other than basic arithmetic, boolean and list operations
+4. Full trace, shows all steps of evaluation
 
 The available verbosity levels of explanation (when the trace is enabled) are:
 
