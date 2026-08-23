@@ -280,7 +280,6 @@ nextActionExpr (Var var) _ v b = case v of
   2 -> ("    [Function Replacement]", b)
   3 -> ("    [Replacement of identifier '" ++ var ++ "' with its function body]", b)
   _ -> ("    [I will replace the function identifier '" ++ var ++ "' with its function body]", b)
--- nextActionExpr (Function l) t v b = nextAction l t v b
 nextActionExpr (Val x) t v b = nextActionVal x t v b
 nextActionExpr (Error _) _ _ _ = ("", False)
 nextActionExpr (UnOp Negation (Exp (Var _))) _ _ _ = ("noprint", False) -- negation function does not need an eval step
