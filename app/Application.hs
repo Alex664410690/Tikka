@@ -364,7 +364,7 @@ runApp flags args = do
       , _command = ""
       , _commandMemory = [""]
       , _memoryLocation = 0
-      , _isDarkMode = False
+      , _isDarkMode = True
       }
 
 -- Light mode primary color
