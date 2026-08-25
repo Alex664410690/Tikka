@@ -13,7 +13,7 @@ import Control.Monad.Writer.Lazy (Writer, runWriter, tell)
 import Control.Exception qualified as E
 import Data.Char (isSpace)
 import Data.Either (fromLeft, fromRight, isLeft)
-import Data.List (dropWhileEnd, intercalate, isInfixOf)
+import Data.List (dropWhileEnd, intercalate, isInfixOf, intercalate)
 import Data.List.NonEmpty qualified as N
 import Data.List.Split (splitOn)
 import Data.Ord (clamp)
@@ -107,7 +107,7 @@ addDecl s (l : ls) = if strip (pack $ head $ splitOn "=" s) == strip (pack $ hea
 -- Parses the given file with the given flags, and either returns a parse error or (Text to dump, Text to output, Type + other errors)
 parseAndEvaluate :: Flags -> String -> String -> Either String (String, [String], String)
 parseAndEvaluate flags file func = case parseFile file func (stc flags) of
-  Left s -> if clamp (1, 4) (verbosity flags) > 2 then Left s else Left $ printParseError (lines s)
+  Left s -> if clamp (1, 4) (verbosity flags) > 2 then Left s else Left $ intercalate "\n" $ map (printParseError . lines) (splitOn "\n\n" s)
   Right (evalSteps, errors, deSugared) -> do
     let t = clamp (1, 4) (tracing flags)
     let v = clamp (1, 4) (verbosity flags)
@@ -474,15 +474,17 @@ program func = do
   case parseDecl cs of
     Left s -> customFailure s
     Right fs -> do
-      let gs = foldr combine [] fs
-      case toTerm gs of
-        Left s -> customFailure s
-        Right hs -> case getFunc hs func of
-          Nothing ->
-            if func == "main"
-              then customFailure "Error: No main function defined\n             Every program should contain a function called 'main' which is where the program is entered, and evaluation starts"
-              else customFailure $ "Error: No function " ++ func ++ " defined"
-          Just e -> pure (e, hs)
+      case combineAll fs [] of
+        Left s -> customFailure $ intercalate "\n\n" s
+        Right gs -> do
+          case toTerm gs of
+            Left s -> customFailure s
+            Right hs -> case getFunc hs func of
+              Nothing ->
+                if func == "main"
+                  then customFailure "Error: No main function defined\n             Every program should contain a function called 'main' which is where the program is entered, and evaluation starts"
+                  else customFailure $ "Error: No function " ++ func ++ " defined"
+              Just e -> pure (e, hs)
 
 -- Split up functions by their indentation (new functions begin on non-idented lines)
 pItemList :: Parser (String, [String])
@@ -604,19 +606,34 @@ isFunction t =
       Left bundle -> Just (errorBundlePretty (clean bundle))
       Right _ -> Nothing
 
+-- Combine all function definitions by name (top level pattern matching -> case expressions)
+-- 1st arg = uncombined function definitions
+-- 2nd arg = combined list of definitions
+combineAll :: LUT ([Term], Term) -> LUT [([Term], Term)] -> Either [String] (LUT [([Term], Term)])
+combineAll [] gs = Right gs
+combineAll (f:fs) gs = case combineAll fs gs of
+  Left errs -> case combine f gs of
+    Left err -> Left (err:errs)
+    Right _ -> Left errs
+  Right gs' -> case combine f gs' of
+    Left err -> Left [err]
+    Right gs'' -> Right gs''
+
 -- Add a function definition to a list of definitions, where those with the same name are combined
 -- 1st arg = new function definition
 -- 2nd arg = list of definitions
-combine :: (String, ([Term], Term)) -> [(String, [([Term], Term)])] -> [(String, [([Term], Term)])]
-combine ("0typeSig", _) fs = fs
-combine (name, f) [] = [(name, [f])]
-combine (name, f) ((name', fs) : gs) =
-  if name == name'
-    then (name, f : fs) : gs
-    else (name', fs) : combine (name, f) gs
+combine :: (String, ([Term], Term)) -> LUT [([Term], Term)] -> Either String (LUT [([Term], Term)])
+combine ("0typeSig", _) fs = Right fs -- discard type signatures
+combine (name, f) [] = Right [(name, [f])]
+combine (name, f) ((name', fs) : gs)
+  | name == name' && head name `elem` ['A'..'Z'] = Left $ "Error: The data constructor '" ++ name ++ "' is used multiple times, or shares a name with a predefined data constructor in Prelude\n       Identifiers for data types and their constructors must be unique to ensure the exact type is known when a constructor is used"
+  | name == name' = Right $ (name, f : fs) : gs
+  | otherwise = case combine (name, f) gs of
+      Left err -> Left err
+      Right fs' -> Right $ (name', fs) : fs'
 
 -- Desugars function arguments to abstractions, and creates a case statement for pattern matching where needed
-toTerm :: [(String, [([Term], Term)])] -> Either String (LUT Term)
+toTerm :: LUT [([Term], Term)] -> Either String (LUT Term)
 toTerm [] = Right []
 toTerm ((name, cases) : fs) = case createTerm name cases of
   Left s -> Left s
@@ -629,7 +646,7 @@ toTerm ((name, cases) : fs) = case createTerm name cases of
       then Right $ createAbs (head cs)
       else case checkCases cs of
         Just x -> Right x
-        Nothing -> Left $ "Error: The function '" ++ n ++ "' is declared with different numbers of arguments\n       Functions can be declared multiple times (for example for pattern matching), but each declaration must have the same number of arguments / inputs. Perhaps you accidentally reused a function name?"
+        Nothing -> Left $ "Error: The function '" ++ n ++ "' is declared with different numbers of arguments, or shares a name with a predefined function in Prelude\n       Functions can be declared multiple times (for example for pattern matching), but each declaration must have the same number of arguments / inputs. Perhaps you accidentally reused a function name?"
 
 -- Creates an abstraction from a list of inputs and an expression
 createAbs :: ([Term], Term) -> Term
