@@ -124,6 +124,7 @@ parseAndEvaluate flags file func = case parseFile file func (stc flags) of
             Right (toDump, toPrint, typeCheck v (last evalSteps) ++ printErrors v errors)
         )
  where
+  printParseError [] = ""
   printParseError [err] = err
   printParseError errLines = intercalate "\n" (init errLines) ++ "\n"
   dumpFile ("Just", body, _) = "\n\n-- IMPORTED FROM PRELUDE:\n\nJust = " ++ show body
@@ -479,7 +480,7 @@ program func = do
         Right gs -> do
           case toTerm gs of
             Left s -> customFailure s
-            Right hs -> case getFunc hs func of
+            Right hs -> case lookup func hs of
               Nothing ->
                 if func == "main"
                   then customFailure "Error: No main function defined\n             Every program should contain a function called 'main' which is where the program is entered, and evaluation starts"
@@ -504,7 +505,7 @@ pItem isCase = do
 -- parse the text into function declarations
 parseDecl :: [String] -> Either String (LUT ([Term], Term))
 parseDecl [] = Right []
-parseDecl (c : cs) = case parse (moduleImport <|> try typeSig <|> try dataType <|> funcDecl) "" (pack c) of
+parseDecl (c : cs) = case parse (decl <* eof) "" (pack c) of
   Left bundle -> Left $ unpack $ replace "input" "declaration" $ pack $ errorBundlePretty $ clean bundle
   Right [x] -> case parseDecl cs of
     Left s -> Left s
@@ -512,6 +513,12 @@ parseDecl (c : cs) = case parse (moduleImport <|> try typeSig <|> try dataType <
   Right y -> case parseDecl cs of
     Left s -> Left s
     Right ys -> Right (y ++ ys)
+  where
+    decl =
+      (lookAhead (lexeme "data") *> dataType)
+        <|> (lookAhead (lexeme "import") *> moduleImport)
+        <|> try typeSig
+        <|> funcDecl
 
 -- Throws an error if an imported module tries to import a module
 moduleImport :: Parser (LUT ([Term], Term))
@@ -524,28 +531,30 @@ dataType :: Parser (LUT ([Term], Term))
 dataType = do
   lexeme "data"
   n <- identifier'
-  many identifier -- parses polymorphic datatypes in the form 'Maybe a = Just a | Nothing'
+  ts <- many identifier -- parses polymorphic datatypes in the form 'Maybe a = Just a | Nothing'
+  let is = zip ts (typeReadAll 0 ts)
   lexeme "="
-  c' <- typeCon
-  cs <- many typeCons
-  pure $ map (makeDT n) (c' : cs)
- where
-  makeDT n (c, ts) = (c, (vars ts, Exp . Val $ CustomDT c (vars ts) (V n ts)))
-  vars x = generateVars (length x)
+  cs <- some $ typeCon is
+  pure $ map (makeDT n) cs
+    where
+      makeDT n (c, ts) = (c, (vars ts, Exp . Val $ CustomDT c (vars ts) (V n ts)))
+      vars x = generateVars (length x)
 
 -- Parses one decalaration of a type constructor
-typeCon :: Parser (String, [TermType])
-typeCon = do
+typeCon :: LUT TermType -> Parser (String, [TermType])
+typeCon is = do
   c <- identifier'
-  xs <- many typeIdentifier
-  let ts = typeReadAll 0 xs
+  ts <- many $ try $ typeIdentifier' c
+  void (lexeme "|") <|> eof <|> void (lookAhead typeIdentifier >>= \i -> customFailure ("Error: Unknown type variable '" ++ i ++ "' used in data constructor '" ++ c ++ "'\n       Type variables used in a custom data type should be found in the type constructor (before '=')"))
   pure (c, ts)
-
--- Parses the rest of the type constructors
-typeCons :: Parser (String, [TermType])
-typeCons = do
-  lexeme "|"
-  typeCon
+    where
+      -- Parses a type identifier (or polymorphic placeholder from a LUT)
+      typeIdentifier' :: String -> Parser TermType
+      typeIdentifier' c = do
+        i <- typeIdentifier
+        if head i `elem` ['a' .. 'z']
+          then maybe (customFailure $ "Error: Unknown type variable '" ++ i ++ "' used in data constructor '" ++ c ++ "'\n       Type variables used in a custom data type should be found in the type constructor (before '=')") pure (lookup i is)
+          else pure (typeRead 0 i)
 
 -- Reads in a list of types and converts it to a list of TermTypes
 typeReadAll :: Int -> [String] -> [TermType]
@@ -678,8 +687,3 @@ createCases vars es = Exp $ Case (Exp $ Val $ Tuple vars) [(Exp $ Val $ Tuple as
 generateVars :: Int -> [Term]
 generateVars 0 = []
 generateVars n = Exp (Var (show n ++ "var")) : generateVars (n - 1)
-
--- Gets the function to be evaluated from the list of references
-getFunc :: LUT Term -> String -> Maybe Term
-getFunc [] _ = Nothing
-getFunc ((n, x) : t) s = if n == s then Just x else getFunc t s
