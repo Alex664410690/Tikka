@@ -4,21 +4,24 @@
 
 module Application (runApp) where
 
-import Control.Lens
-import Control.Monad
-import Data.Ord
+import Control.Lens ( (&), (.~), (?~), makeLenses, element )
+import Control.Monad ( unless )
+import Data.Ord ( clamp )
 import Data.Text (Text, append, concat, init, intercalate, lines, pack, splitOn, unpack)
+import Data.Default ( Default(def) )
+import Data.Maybe (fromMaybe)
 import Monomer
 import Monomer.Core.Themes.BaseTheme (BaseThemeColors (..), baseTheme)
-import System.Clipboard
-import System.IO
+import System.Clipboard ( getClipboardString )
+import System.IO ( readFile )
 import Tikka
 
 import Monomer.Lens qualified as L
 import TextAreaScroll qualified as T
 
-import System.Info
+import System.Info (os)
 
+-- Application model / state
 data AppModel = AppModel
   { _filePath :: Text
   , _code :: Text
@@ -33,9 +36,11 @@ data AppModel = AppModel
   , _command :: Text
   , _commandMemory :: [Text]
   , _memoryLocation :: Int
+  , _isDarkMode :: Bool
   }
   deriving (Eq, Show)
 
+-- Application events
 data AppEvent
   = AppInit
   | AppIgnore
@@ -61,6 +66,7 @@ data AppEvent
 
 makeLenses 'AppModel
 
+-- Converts verbosity level to text for the dropdown
 verbFlagToText :: Int -> Text
 verbFlagToText 1 = "No Explanation"
 verbFlagToText 2 = "Concise"
@@ -68,6 +74,7 @@ verbFlagToText 3 = "Concise Detail"
 verbFlagToText 4 = "Conversational"
 verbFlagToText _ = error "Unknown verbosity level"
 
+-- Converts trace level to text for the dropdown
 traceFlagToText :: Int -> Text
 traceFlagToText 1 = "No Trace"
 traceFlagToText 2 = "Reduced Case Selection"
@@ -75,6 +82,10 @@ traceFlagToText 3 = "Reduced Operations"
 traceFlagToText 4 = "Full"
 traceFlagToText _ = error "Unknown tracing level"
 
+-- Builds the widget for a single row of the trace output
+-- 1st arg = App model
+-- 2nd arg = Row's step index
+-- 3rd arg = Row's step text (console-printed trace)
 traceRow :: AppModel -> Int -> Text -> WidgetNode AppModel AppEvent
 traceRow model i t = row
  where
@@ -86,18 +97,23 @@ traceRow model i t = row
   row =
     vstack
       [ hstack
-          [ button_ traceOutput (OpenTrace i) [ignoreTheme] `styleBasic` [textSize 16, padding 10]
-          ]
+          [ button_ traceOutput (OpenTrace i) [ignoreTheme] `styleBasic` [textSize 16, padding 10, textColor (fromMaybe white $ _txsFontColor $ fromMaybe mempty $ _sstText $ _thsLabelStyle $ _themeBasic $ fst $ activeTheme (_isDarkMode model))] ]
           `styleBasic` [borderB 1 rowSep]
           `styleHover` [bgColor rowBg]
       , label traceExplanation `styleBasic` [padding 10] `nodeVisible` (traceExplanation /= "" && _visibleTrace model !! i)
       ]
 
+-- Gets the active theme, dark or light mode
+activeTheme :: Bool -> (Theme, Theme)
+activeTheme True = (appDarkTheme, lineNumberDarkTheme)
+activeTheme False = (appLightTheme, lineNumberLightTheme)
+
+-- Builds the entire UI as a widget
 buildUI :: WidgetEnv AppModel AppEvent -> AppModel -> WidgetNode AppModel AppEvent
 buildUI _ model = widgetTree
  where
   widgetTree =
-    keystroke [("Ctrl-s", SaveCode)] $
+    keystroke [("Ctrl-s", SaveCode)] $ themeSwitch_ (fst $ activeTheme (_isDarkMode model)) [themeClearBg] $
       vstack
         [ hstack
             [ button "Run" RunCode
@@ -112,7 +128,7 @@ buildUI _ model = widgetTree
                 vstack
                   [ label "Trace level:"
                   , spacer
-                  , textDropdown_ tracingFlag [1, 2, 3] traceFlagToText []
+                  , textDropdown_ tracingFlag [1, 2, 3, 4] traceFlagToText []
                   ]
             , spacer
             , box_ [sizeReqUpdater (\(_, y) -> (width 155, y))] $
@@ -139,7 +155,7 @@ buildUI _ model = widgetTree
             , vstack
                 [ label "STC:"
                 , spacer
-                , box_ [sizeReqUpdater (\(x, _) -> (x, height 13)), alignBottom] $ checkbox stcFlag
+                , box_ [sizeReqUpdater (\(x, _) -> (x, height 25)), alignBottom] $ checkbox stcFlag `styleBasic` [fgColor highlightColor, hlColor highlightColor]
                 ]
                 `styleBasic` [padding 10]
             ]
@@ -155,7 +171,7 @@ buildUI _ model = widgetTree
                               [ label "Code" `styleBasic` [padding 5]
                               , scroll
                                   ( hstack
-                                      [ themeSwitch lineNumberTheme $ box_ [sizeReqUpdater (\(_, y) -> (width 50, y))] $ textArea_ lineNumbers [readOnly] `nodeEnabled` False
+                                      [ themeSwitch (snd $ activeTheme (_isDarkMode model)) $ box_ [sizeReqUpdater (\(_, y) -> (width 50, y))] $ textArea_ lineNumbers [readOnly] `nodeEnabled` False
                                       , keystroke_ [("Ctrl-v", PasteCode)] [ignoreChildrenEvts] $ scroll_ [scrollStyle L.textAreaStyle, scrollFwdStyle scrollFwdDefault] $ T.textArea_ code [onChange CodeChanged, acceptTab] UpdateScroll `nodeKey` "Code"
                                       ]
                                   )
@@ -185,14 +201,25 @@ buildUI _ model = widgetTree
         , hstack
             [ label ">>> "
             , keystroke_ [("Enter", ConsoleCommand (_command model == "")), ("Ctrl-v", PasteCommand)] [ignoreChildrenEvts] $ keystroke [("Up", DecMemoryLocation), ("Down", IncMemoryLocation)] $ textField_ command [placeholder "Define / run function, 'clear' to wipe memory", onChange CommandChange]
+            , spacer_ [width 5]
+            , zstack 
+              [ image_ "assets/icons/light-dark-mode.png" [fitEither] `styleBasic` [width 32, height 32] -- "Night mode" icon created by Freepik - Flaticon
+              , toggleButton_ " " isDarkMode [toggleButtonOffStyle darkToggleOffStyle] `styleBasic` [bgColor transparent, textColor transparent, border 0 transparent]
+              ]
             ]
         ]
         `styleBasic` [padding 10]
 
+-- Helper for the dark mode toggle's style when pressed (i.e. app currently in dark mode)
+darkToggleOffStyle :: Style
+darkToggleOffStyle = def & L.basic ?~ (def & L.bgColor ?~ transparent)
+
+-- Builds all trace output rows from a trace
 traceRows :: AppModel -> Int -> [Text] -> [WidgetNode AppModel AppEvent]
 traceRows _ _ [] = []
 traceRows model i (t : ts) = traceRow model i t : traceRows model (i + 1) ts
 
+-- Handles events thrown by UI widgets
 handleEvent ::
   WidgetEnv AppModel AppEvent ->
   WidgetNode AppModel AppEvent ->
@@ -222,6 +249,7 @@ handleEvent _ _ model evt = case evt of
   DecMemoryLocation -> [Model (model & memoryLocation .~ max (_memoryLocation model - 1) 0 & command .~ (_commandMemory model !! max (_memoryLocation model - 1) 0))]
   CommandChange t -> [Model (model & commandMemory .~ (_commandMemory model & element (_memoryLocation model) .~ t))]
 
+-- Event called when pressing "Run"
 runCode :: Text -> Flags -> String -> IO AppEvent
 runCode fp fs s = do
   saveCode fp s
@@ -232,22 +260,27 @@ runCode fp fs s = do
       dumpCode toDump (dump fs)
       pure $ WriteTraceAndError (intercalate "\n" (map pack toPrint)) (pack err)
 
+-- Event called when pressing "Save"
 saveCode :: Text -> String -> IO AppEvent
 saveCode "" _ = pure AppIgnore
 saveCode fp s = writeFile (unpack fp) s >> pure AppIgnore
 
+-- Event called when pressing "Load"
 loadCode :: Text -> IO AppEvent
 loadCode "" = pure AppIgnore
 loadCode fp = do
   c <- System.IO.readFile (unpack fp)
   pure $ WriteCode (pack c)
 
+-- Called when running code to save to a dump location if specified
 dumpCode :: String -> FilePath -> IO ()
 dumpCode toDump fp = unless (fp == "") (writeFile fp toDump)
 
+-- Creates string of newline-separated line numbers
 getLineNumbers :: Text -> Text
 getLineNumbers c = Data.Text.concat [pack (show n ++ "\n") | n <- [1 .. (Prelude.length (Data.Text.lines c))]]
 
+-- Event called when text entered to the console
 consoleCommand :: AppModel -> Flags -> String -> String -> IO AppEvent
 consoleCommand model fs file s =
   if s == "clear"
@@ -257,6 +290,7 @@ consoleCommand model fs file s =
         Just _ -> runCommand fs file s
         Nothing -> addToLocalDecl s >> pure (ClearCommand (append (_command model) "\n\n"))
 
+-- Event called when a command is to be executed from the console
 runCommand :: Flags -> String -> String -> IO AppEvent
 runCommand fs s n = do
   writeFile "imports/command-line" ("commandLineREPL = " ++ n ++ "\n")
@@ -267,6 +301,7 @@ runCommand fs s n = do
       dumpCode toDump (dump fs)
       pure $ WriteTraceAndErrorConsole (intercalate "\n" (map pack (n : toPrint))) (pack err)
 
+-- Event called when Ctrl+V is detected in the code input
 pasteCode :: IO AppEvent
 pasteCode = do
   t <- getClipboardString
@@ -274,6 +309,7 @@ pasteCode = do
     Nothing -> pure AppIgnore
     Just x -> pure $ PasteToCode (pack x)
 
+-- Event called when Ctrl+V is detected in the console
 pasteCommand :: IO AppEvent
 pasteCommand = do
   t <- getClipboardString
@@ -281,6 +317,7 @@ pasteCommand = do
     Nothing -> pure AppIgnore
     Just x -> pure $ PasteToCommand (pack x)
 
+-- Entry point to the application
 runApp :: Flags -> [FilePath] -> IO ()
 runApp flags args = do
   let fp = if null args then "" else head args
@@ -293,7 +330,7 @@ runApp flags args = do
         [ appWindowState (MainWindowNormal (1000, 600))
         , appWindowTitle "Tikka"
         , appWindowIcon "./assets/icons/lambda.bmp" -- Term icon created by Freepik - Flaticon
-        , appTheme customAppTheme
+        , appTheme appLightTheme
         , appFontDef "Regular" "./assets/fonts/Consolas.ttf"
         , appFontDef "Medium" "./assets/fonts/Consolas.ttf"
         , appFontDef "Bold" "./assets/fonts/Consolas.ttf"
@@ -305,7 +342,7 @@ runApp flags args = do
         , appWindowTitle "Tikka"
         , appWindowIcon "./assets/icons/lambda.bmp" -- Term icon created by Freepik - Flaticon
         , appDisableAutoScale True
-        , appTheme customAppTheme
+        , appTheme appLightTheme
         , appFontDef "Regular" "./assets/fonts/Consolas.ttf"
         , appFontDef "Medium" "./assets/fonts/Consolas.ttf"
         , appFontDef "Bold" "./assets/fonts/Consolas.ttf"
@@ -327,28 +364,73 @@ runApp flags args = do
       , _command = ""
       , _commandMemory = [""]
       , _memoryLocation = 0
+      , _isDarkMode = True
       }
 
-lineNumberTheme :: Theme
-lineNumberTheme =
+-- Light mode primary color
+lightColor :: Color
+lightColor = rgbHex "f7f7f7"
+
+-- Dark mode primary color
+darkColor :: Color
+darkColor = rgbHex "404040"
+
+-- Highlight color
+highlightColor :: Color
+highlightColor = rgbHex "c27e00"
+
+-- Application light theme
+appLightTheme :: Theme
+appLightTheme =
   baseTheme
-    darkThemeColors
-      { inputBgBasic = rgbHex "404040"
-      , inputBgDisabled = rgbHex "404040"
+    lightThemeColors
+      { clearColor = lightColor
+      , inputBgBasic = lightColor
+      , inputFocusBorder = highlightColor
+      , btnFocusBorder = highlightColor
+      , slNormalFocusBorder = highlightColor
+      , slSelectedFocusBorder = highlightColor
+      }
+
+-- Theme for the line number text box when in light mode
+lineNumberLightTheme :: Theme
+lineNumberLightTheme =
+  baseTheme
+    lightThemeColors
+      { inputBgBasic = lightColor
+      , inputBgDisabled = lightColor
       , inputTextDisabled = rgbHex "a3a3a3"
-      , inputBorder = rgbHex "404040"
-      , scrollBarBasic = rgbHex "404040"
-      , scrollBarHover = rgbHex "404040"
-      , scrollThumbBasic = rgbHex "404040"
-      , scrollThumbHover = rgbHex "404040"
+      , inputBorder = lightColor
+      , scrollBarBasic = lightColor
+      , scrollBarHover = lightColor
+      , scrollThumbBasic = lightColor
+      , scrollThumbHover = lightColor
       }
 
-customAppTheme :: Theme
-customAppTheme =
+-- Application dark theme
+appDarkTheme :: Theme
+appDarkTheme =
   baseTheme
     darkThemeColors
-      { clearColor = rgbHex "404040"
+      { clearColor = darkColor
       , inputBgBasic = rgbHex "505050"
-      , inputFocusBorder = rgbHex "c27e00"
-      , btnFocusBorder = rgbHex "c27e00"
+      , inputFocusBorder = highlightColor
+      , btnFocusBorder = highlightColor
+      , slNormalFocusBorder = highlightColor
+      , slSelectedFocusBorder = highlightColor
+      }
+
+-- Theme for the line number text box when in dark mode
+lineNumberDarkTheme :: Theme
+lineNumberDarkTheme =
+  baseTheme
+    darkThemeColors
+      { inputBgBasic = darkColor
+      , inputBgDisabled = darkColor
+      , inputTextDisabled = rgbHex "a3a3a3"
+      , inputBorder = darkColor
+      , scrollBarBasic = darkColor
+      , scrollBarHover = darkColor
+      , scrollThumbBasic = darkColor
+      , scrollThumbHover = darkColor
       }
