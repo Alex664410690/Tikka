@@ -10,7 +10,6 @@ import Prelude hiding (GT, LT)
 
 import Data.String.Interpolate
 import Data.Maybe (mapMaybe)
-import Control.Monad (when)
 
 -- Represents an arithmetic expression or term
 data Expr
