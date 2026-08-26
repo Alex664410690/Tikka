@@ -9,6 +9,8 @@ import Data.List qualified as List
 import Prelude hiding (GT, LT)
 
 import Data.String.Interpolate
+import Data.Maybe (mapMaybe)
+import Control.Monad (when)
 
 -- Represents an arithmetic expression or term
 data Expr
@@ -117,8 +119,6 @@ instance Eq Term where
   Abs s1 l1 == Abs s2 l2 = s1 == s2 && l1 == l2
   App l1 l2 == App l3 l4 = l1 == l3 && l2 == l4
   Trace l1 == Trace l2 = l1 == l2
-  -- l1 == Trace l2 = l1 == l2
-  -- Trace l1 == l2 = l1 == l2
   _ == _ = False
 
 instance Show Term where
@@ -180,7 +180,7 @@ instance Show Value where
   show (CustomDT n es (V l _)) = l ++ "@" ++ n ++ " " ++ brackets (unwords (map show es))
   show (CustomDT n es _) = n ++ " " ++ brackets (unwords (map show es))
 
--- | An TermType is a (approximate) type of an expression.
+-- | A TermType is a (approximate) type of an expression.
 data TermType
   = -- | Typed value, where the first argument is the type name
     V String [TermType]
@@ -188,6 +188,9 @@ data TermType
     F TermType TermType
   | -- | A polymorphic type variable
     N Int
+  | -- | Custom Data Type, where the first argument is the type name, 
+    --    second is the list of types of polymorphic identifiers and the third is the list of constructors
+    C String (LUT TermType) [TermType]
 
 instance Show TermType where
   show (V "list" []) = error "list should never have no type"
@@ -200,6 +203,7 @@ instance Show TermType where
   show (F (F t1 t1') t2) = "(" ++ show (F t1 t1') ++ ") -> " ++ show t2
   show (F t1 t2) = show t1 ++ " -> " ++ show t2
   show (N n) = "a" ++ show n
+  show (C l ps _) = l ++ " " ++ unwords (map (show . snd) ps)
 
 instance Eq TermType where
   V "list" xs == V "list" ys = xs == ys
@@ -208,6 +212,7 @@ instance Eq TermType where
   F t1 t3 == F t2 t4 = t1 == t2 && t3 == t4
   _ == N _ = True
   N _ == _ = True
+  C l1 t1 _ == C l2 t2 _ = l1 == l2 && t1 == t2
   _ == _ = False
 
 ------------------------
@@ -517,7 +522,7 @@ singleBestType :: LUT TermType -> [TermType] -> Either String TermType
 singleBestType fs [] = Right $ getNextNull fs
 singleBestType fs (N i : ts) = case singleBestType fs ts of
   Left err -> Left err
-  Right (N j) -> if i < j then Right (N i) else Right (N j)
+  Right (N j) -> if i > j then Right (N i) else Right (N j)
   x -> x
 singleBestType fs ((V l t) : ts) = case checkInputTypes (V l t) ts of
   Just s -> Left s
@@ -529,11 +534,20 @@ singleBestType fs ((F a b) : ts) = case singleBestType fs (a : [a' | (F a' _) <-
   Right x -> case singleBestType fs (b : [b' | (F _ b') <- ts]) of
     Left err -> Left err
     Right y -> Right $ F x y
+singleBestType fs ((C l ps ts) : ts') = sequence (bestLUT fs (map fst ps) (ps : [ps' | (C _ ps' _) <- ts'])) >>= (\p -> Right (C l p ts))
+  where
+    bestLUT fs [] luts = []
+    bestLUT fs (i:is) luts = case bestPolymorphic fs luts i of
+      Left s -> Left s : bestLUT fs is luts
+      Right t -> Right t : bestLUT (t:fs) is luts
+    bestPolymorphic fs luts s = case singleBestType fs (mapMaybe (lookup s) luts) of
+      Left err -> Left err
+      Right t -> Right (s, t)
 
 checkInputTypes :: TermType -> [TermType] -> Maybe String
 checkInputTypes _ [] = Nothing
 checkInputTypes (V "list" t) ((V "list" t') : ts) = if t == t' then checkInputTypes (V "list" t) ts else Just $ "Error: Case expression patterns have different types, " ++ show (V "list" t) ++ " and " ++ show (V "list" t')
-checkInputTypes (V "tuple" t) ((V "tuple" t') : ts) = if t == t' then checkInputTypes (V "tuple" t) ts else Just $ "Error: Case expression patterns have different types, " ++ show (V "tuple" t) ++ " and " ++ show (V "list" t')
+checkInputTypes (V "tuple" t) ((V "tuple" t') : ts) = if t == t' then checkInputTypes (V "tuple" t) ts else Just $ "Error: Case expression patterns have different types, " ++ show (V "tuple" t) ++ " and " ++ show (V "tuple" t')
 checkInputTypes (V l t) ((V l' t') : ts) = if l == l' then checkInputTypes (V l t) ts else Just $ "Error: Case expression patterns have different types, " ++ show (V l t) ++ " and " ++ show (V l' t')
 checkInputTypes t (t' : ts) = if t == t' then checkInputTypes t ts else Just $ "Error: Case expression patterns have different types, " ++ show t ++ " and " ++ show t'
 
@@ -582,24 +596,6 @@ inferCaseType fs name (e : es) = do
           | t == t' -> Right ((l', t') : (l, t) : ts ++ ts')
           | otherwise -> Left $ "Error: Case expressions '" ++ show e ++ "' and '" ++ show (head es) ++ "' are of different types"
 
--- Left err -> Left err
--- Right ((l, N i) : ts) -> case inferCaseType fs name es of
---   Left err -> Left err
---   Right
---   Right [] -> Right
--- Right ((l, t) : ts) -> case inferCaseType fs name es of
---   Left err -> Left err
---   Right ((l', N _) : ts') -> if l == "" then Right (((l', t) : ts') ++ ((l, t) : ts)) else Right (((l, t) : ts') ++ ((l', t) : ts))
---   Right ((l', t') : ts') ->
---     if t == t'
---       then
---         if length ts > length ts'
---           then Right ((l, t) : (l', t') : ts ++ ts') -- works out which case infered the most about other types (cheap but dirty)
---           else Right ((l', t') : (l, t) : ts ++ ts')
---       else Left $ "Error: Case expressions '" ++ show e ++ "' and '" ++ show (head es) ++ "' are of different types"
---   Right [] -> Right ((l, t) : ts)
--- Right _ -> error "list of type inferences should never be empty"
-
 -- Infers the type of a given lambda function (head of the list of references and their types), or returns a type error
 -- 1st arg = list of function references and bodies
 -- 2nd arg = the name of the overarching function (if it is a function body)
@@ -618,6 +614,7 @@ inferTermType fs name (App f g) = do
     ((n, F (N i) x) : ts) -> do
       gt <- inferTermType fs name g
       case gt of
+        ((n', N j) : ts') -> Right ((n, x) : (n', N i) : ts ++ ts')
         ((n', g') : ts') -> Right (("", replaceType i g' x) : (n, F g' (replaceType i g' x)) : (n', g') : ts ++ ts')
         _ -> error "list of type inferences should never be empty"
     ((_, F a b) : ts) -> do
@@ -658,6 +655,9 @@ replaceType :: Int -> TermType -> TermType -> TermType
 replaceType i x (N j) = if i == j then x else N j
 replaceType i x (V l ts) = V l (map (replaceType i x) ts)
 replaceType i x (F a b) = F (replaceType i x a) (replaceType i x b)
+replaceType i x (C l ps ts) = C l (map (replaceEntry i x) ps) (map (replaceType i x) ts)
+  where
+    replaceEntry i x (y, t) = (y, replaceType i x t)
 
 -- Gets the type name from a value
 getValueType :: LUT Term -> [String] -> Value -> Either String (LUT TermType)
@@ -681,7 +681,7 @@ getValueType fs name (InfiniteList (e : _)) = case inferTermType fs name e of
   Left err -> Left err
   Right ((_, t) : _) -> Right [("", V "list" [t])]
   Right _ -> error "list of type inferences should never be empty"
-getValueType _ _ (CustomDT _ es (V n ts)) = Right (("", V n ts) : zip (map show es) ts)
+getValueType fs name (CustomDT l1 es t@(C l ps ts)) = Right (("", t) : zip (map show es) ts)
 getValueType _ _ (CustomDT{}) = error "This should never happen"
 
 -- Gets the types in a tuple or custom datatype
@@ -718,6 +718,7 @@ getCurrNull [] = -1
 getCurrNull ((_, N i) : xs) = max i (getCurrNull xs)
 getCurrNull ((_, V _ ts) : xs) = max (getCurrNull (map ("",) ts)) (getCurrNull xs)
 getCurrNull ((_, F a b) : xs) = max (max (getCurrNull [("", a)]) (getCurrNull [("", b)])) (getCurrNull xs)
+getCurrNull ((_, C _ ps _) : xs) = max (getCurrNull (map (("",) . snd) ps)) (getCurrNull xs)
 
 -- Gets the next lowest 'null' value to be used for polymophic data types
 getNextNull :: LUT TermType -> TermType

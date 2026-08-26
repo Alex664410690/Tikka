@@ -535,9 +535,9 @@ dataType = do
   let is = zip ts (typeReadAll 0 ts)
   lexeme "="
   cs <- some $ typeCon is
-  pure $ map (makeDT n) cs
+  pure $ map (makeDT n is) cs
     where
-      makeDT n (c, ts) = (c, (vars ts, Exp . Val $ CustomDT c (vars ts) (V n ts)))
+      makeDT l is (c, ts) = (c, (vars ts, Exp . Val $ CustomDT c (vars ts) (C l is ts)))
       vars x = generateVars (length x)
 
 -- Parses one decalaration of a type constructor
