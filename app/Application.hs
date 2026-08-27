@@ -20,7 +20,7 @@ import Monomer.Lens qualified as L
 import TextAreaScroll qualified as T
 
 import System.Info (os)
-import System.FilePath ((</>), (<.>), takeDirectory, takeFileName)
+import System.FilePath ((</>), (<.>), takeDirectory)
 
 -- Application model / state
 data AppModel = AppModel
@@ -268,7 +268,7 @@ runCode dirFP fp fs s = do
   case o of
     Left err -> pure (WriteTraceAndError "" (pack err))
     Right (toDump, toPrint, err) -> do
-      dumpCode toDump (dirFP </> dump fs)
+      unless (dump fs == "") $ writeFile (dirFP </> dump fs) toDump
       pure $ WriteTraceAndError (intercalate "\n" (map pack toPrint)) (pack err)
 
 -- Event called when pressing "Save"
@@ -282,10 +282,6 @@ loadCode "" = pure AppIgnore
 loadCode fp = do
   c <- System.IO.readFile fp
   pure $ WriteCode (pack c)
-
--- Called when running code to save to a dump location if specified
-dumpCode :: String -> FilePath -> IO ()
-dumpCode toDump fp = unless (takeFileName fp == "") (writeFile fp toDump)
 
 -- Creates string of newline-separated line numbers
 getLineNumbers :: Text -> Text
@@ -315,7 +311,7 @@ runCommand fs dirFP fp s n = do
   case o of
     Left err -> pure (WriteTraceAndError "" (pack err))
     Right (toDump, toPrint, err) -> do
-      dumpCode toDump (dirFP </> dump fs)
+      unless (dump fs == "") $ writeFile (dirFP </> dump fs) toDump
       pure $ WriteTraceAndErrorConsole (intercalate "\n" (map pack (n : toPrint))) (pack err)
 
 -- Event called when Ctrl+V is detected in the code input
