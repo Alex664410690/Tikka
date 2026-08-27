@@ -36,20 +36,20 @@ main = do
   writeFile (dirPath $ "imports" </> "local-decl") "" -- clears the local-decl file
   writeFile (dirPath $ "imports" </> "command-line") "" -- clears the command-line file
   (flags, args) <- parseSystemFlagsOrDie flagsParser
-  fileOrError <- readFileMain $ head args
-  case fileOrError of
-    Left err -> printError $ "Error: Could not find the file/path in the following locations: " ++ tail (Prelude.init err)
-    Right (filePath, f) -> if visual flags then runApp flags args filePath else
-      if null args then startRepl flags "" "" else do
-        o <- parseAndEvaluateProject flags f filePath "main"
-        case o of
-          Left err -> printError err >> putStrLn ""
-          Right (toDump, toPrint, errors) -> do
-            when (dump flags /= "") (writeFile (dirPath $ dump flags) toDump)
-            mapM_ prettyPrint toPrint
-            unless (null errors) (printError errors)
-            putStrLn ""
-        when (repl flags) $ startRepl flags f filePath
+  if null args then startRepl flags "" "" else do
+    fileOrError <- readFileMain $ head args
+    case fileOrError of
+      Left err -> printError $ "Error: Could not find the file/path in the following locations: " ++ tail (Prelude.init err)
+      Right (filePath, f) -> if visual flags then runApp flags args filePath else do
+          o <- parseAndEvaluateProject flags f filePath "main"
+          case o of
+            Left err -> printError err >> putStrLn ""
+            Right (toDump, toPrint, errors) -> do
+              when (dump flags /= "") (writeFile (dirPath $ dump flags) toDump)
+              mapM_ prettyPrint toPrint
+              unless (null errors) (printError errors)
+              putStrLn ""
+          when (repl flags) $ startRepl flags f filePath
 
 -- Reads the given file if possible, returning (path found, contents)
 readFileMain :: String -> IO (Either String (FilePath, String))
