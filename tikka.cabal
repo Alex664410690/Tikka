@@ -40,6 +40,8 @@ library
     , base >=4.7 && <5
     , containers
     , data-default
+    , directory
+    , filepath
     , flags-applicative
     , ghcid
     , lens
@@ -73,6 +75,8 @@ executable tikka
     , base >=4.7 && <5
     , containers
     , data-default
+    , directory
+    , filepath
     , flags-applicative
     , ghcid
     , lens

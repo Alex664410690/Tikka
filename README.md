@@ -19,13 +19,13 @@ The *imports* directory contains the default modules which are imported by Tikka
 
 ## Running the interpreter
 
-Tikka should be run from the main directory (due to the module system's reliance on relative paths), with the following command:
+Tikka can be run from any location (file paths relative to either 1. the current directory or 2. the main *Tikka/* directory) with the following command:
 
-`./dist/tikka [FILEPATH] <options>`
+`./tikka [FILEPATH] <options>`
 
-The list of available options and what they do can be found by running `./dist/tikka --help`. The *repl* and *visual* flags are not compatible with one another, so should not be used simultaneously. For example, the following would run *sample.hs* with static type checking enabled, dump the desugared code to *output.txt* and trace the evaluation in full with concise explanation, before entering REPL mode:
+The list of available options and what they do can be found by running `./tikka --help`. The *repl* and *visual* flags are not compatible with one another, so should not be used simultaneously. For example, the following would run *sample.hs* with static type checking enabled, dump the desugared code to *output.txt* and trace the evaluation in full with concise explanation, before entering REPL mode:
 
-`./dist/tikka sample.hs --stc --dump=output.txt --trace=4 --verb=2 --repl`
+`./tikka sample.hs --stc --dump=output.txt --trace=4 --verb=2 --repl`
 
 The available levels of evaluation tracing are:
 
@@ -49,7 +49,7 @@ This project uses the Haskell Tool Stack, which can be installed [here](https://
 
 `stack build --copy-bins --local-bin-path=./dist`
 
-can be used to build the project. This may take a while the first time it is run. If it encounters an error, run the same command again and it should install fully. If it still does not after the third attempt, please contact the [maintainer](alexhobbs.0515@gmail.com).
+can be used to build the project from the main *Tikka/* directory. This may take a while the first time it is run. If it encounters an error, run the same command again and it should install fully. If it still does not after the third attempt, please contact the [maintainer](alexhobbs.0515@gmail.com).
 
 ## License
 Copyright (c) 2026 Alex Hobbs and Alex Dixon. 
