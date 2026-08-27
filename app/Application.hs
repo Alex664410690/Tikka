@@ -4,23 +4,28 @@
 
 module Application (runApp) where
 
-import Control.Lens
-import Control.Monad
-import Data.Ord
+import Control.Lens ( (&), (.~), (?~), makeLenses, element )
+import Control.Monad ( unless )
+import Data.Ord ( clamp )
 import Data.Text (Text, append, concat, init, intercalate, lines, pack, splitOn, unpack)
+import Data.Default ( Default(def) )
+import Data.Maybe (fromMaybe)
 import Monomer
 import Monomer.Core.Themes.BaseTheme (BaseThemeColors (..), baseTheme)
-import System.Clipboard
-import System.IO
+import System.Clipboard ( getClipboardString )
+import System.IO ( readFile )
 import Tikka
 
 import Monomer.Lens qualified as L
 import TextAreaScroll qualified as T
 
-import System.Info
+import System.Info (os)
+import System.FilePath ((</>), (<.>), takeDirectory)
 
+-- Application model / state
 data AppModel = AppModel
-  { _filePath :: Text
+  { _dirFilePath :: Text
+  , _filePath :: Text
   , _code :: Text
   , _trace :: Text
   , _errors :: Text
@@ -33,9 +38,11 @@ data AppModel = AppModel
   , _command :: Text
   , _commandMemory :: [Text]
   , _memoryLocation :: Int
+  , _isDarkMode :: Bool
   }
   deriving (Eq, Show)
 
+-- Application events
 data AppEvent
   = AppInit
   | AppIgnore
@@ -61,6 +68,7 @@ data AppEvent
 
 makeLenses 'AppModel
 
+-- Converts verbosity level to text for the dropdown
 verbFlagToText :: Int -> Text
 verbFlagToText 1 = "No Explanation"
 verbFlagToText 2 = "Concise"
@@ -68,12 +76,18 @@ verbFlagToText 3 = "Concise Detail"
 verbFlagToText 4 = "Conversational"
 verbFlagToText _ = error "Unknown verbosity level"
 
+-- Converts trace level to text for the dropdown
 traceFlagToText :: Int -> Text
 traceFlagToText 1 = "No Trace"
-traceFlagToText 2 = "Reduced"
-traceFlagToText 3 = "Full"
+traceFlagToText 2 = "Reduced Case Selection"
+traceFlagToText 3 = "Reduced Operations"
+traceFlagToText 4 = "Full"
 traceFlagToText _ = error "Unknown tracing level"
 
+-- Builds the widget for a single row of the trace output
+-- 1st arg = App model
+-- 2nd arg = Row's step index
+-- 3rd arg = Row's step text (console-printed trace)
 traceRow :: AppModel -> Int -> Text -> WidgetNode AppModel AppEvent
 traceRow model i t = row
  where
@@ -85,62 +99,74 @@ traceRow model i t = row
   row =
     vstack
       [ hstack
-          [ button_ traceOutput (OpenTrace i) [ignoreTheme] `styleBasic` [textSize 16, padding 10]
-          ]
+          [ button_ traceOutput (OpenTrace i) [ignoreTheme] `styleBasic` [textSize 16, padding 10, textColor (fromMaybe white $ _txsFontColor $ fromMaybe mempty $ _sstText $ _thsLabelStyle $ _themeBasic $ fst $ activeTheme (_isDarkMode model))] ]
           `styleBasic` [borderB 1 rowSep]
           `styleHover` [bgColor rowBg]
       , label traceExplanation `styleBasic` [padding 10] `nodeVisible` (traceExplanation /= "" && _visibleTrace model !! i)
       ]
 
-buildUI :: WidgetEnv AppModel AppEvent -> AppModel -> WidgetNode AppModel AppEvent
-buildUI _ model = widgetTree
+-- Gets the active theme, dark or light mode
+activeTheme :: Bool -> (Theme, Theme)
+activeTheme True = (appDarkTheme, lineNumberDarkTheme)
+activeTheme False = (appLightTheme, lineNumberLightTheme)
+
+-- Builds the entire UI as a widget
+buildUI :: FilePath -> WidgetEnv AppModel AppEvent -> AppModel -> WidgetNode AppModel AppEvent
+buildUI p _ model = widgetTree
  where
   widgetTree =
-    keystroke [("Ctrl-s", SaveCode)] $
+    keystroke [("Ctrl-s", SaveCode)] $ themeSwitch_ (fst $ activeTheme (_isDarkMode model)) [themeClearBg] $
       vstack
         [ hstack
-            [ button "Run" RunCode
+            [ vstack [ hstack
+                [ mainButton "Run" RunCode `styleBasic` [height 70]
+                , spacer
+                , vstack
+                    [ button "Load" LoadCode `styleBasic` [height 35]
+                    , spacer
+                    , button "Save" SaveCode `styleBasic` [height 35]
+                    ]
+                ] ]
             , spacer
             , vstack
-                [ button "Load" LoadCode
-                , spacer
-                , button "Save" SaveCode
+                [ label (pack ("Base file location: " ++ unpack (_dirFilePath model)))
+                , hstack
+                    [ box_ [sizeReqUpdater (\(_, y) -> (width 230, y))] $
+                        vstack
+                          [ label "Trace level:"
+                          , spacer
+                          , textDropdown_ tracingFlag [1, 2, 3, 4] traceFlagToText []
+                          ]
+                    , spacer
+                    , box_ [sizeReqUpdater (\(_, y) -> (width 155, y))] $
+                        vstack
+                          [ label "Verbosity:"
+                          , spacer
+                          , textDropdown_ verbosityFlag [1, 2, 3, 4] verbFlagToText []
+                          ]
+                    , spacer
+                    , box $
+                        vstack
+                          [ label "Load/Save location:"
+                          , spacer
+                          , textField filePath
+                          ]
+                    , spacer
+                    , box $
+                        vstack
+                          [ label "De-sugared code dump:"
+                          , spacer
+                          , textField dumpFlag
+                          ]
+                    , spacer
+                    , vstack
+                        [ label "STC:"
+                        , spacer
+                        , box_ [sizeReqUpdater (\(x, _) -> (x, height 34)), alignCenter] $ checkbox stcFlag `styleBasic` [fgColor highlightColor, hlColor highlightColor]
+                        ]
+                        `styleBasic` [padding 10]
+                    ]
                 ]
-            , spacer
-            , box_ [sizeReqUpdater (\(_, y) -> (width 110, y))] $
-                vstack
-                  [ label "Trace level:"
-                  , spacer
-                  , textDropdown_ tracingFlag [1, 2, 3] traceFlagToText []
-                  ]
-            , spacer
-            , box_ [sizeReqUpdater (\(_, y) -> (width 155, y))] $
-                vstack
-                  [ label "Verbosity:"
-                  , spacer
-                  , textDropdown_ verbosityFlag [1, 2, 3, 4] verbFlagToText []
-                  ]
-            , spacer
-            , box $
-                vstack
-                  [ label "Load/Save location:"
-                  , spacer
-                  , textField filePath
-                  ]
-            , spacer
-            , box $
-                vstack
-                  [ label "De-sugared code dump:"
-                  , spacer
-                  , textField dumpFlag
-                  ]
-            , spacer
-            , vstack
-                [ label "STC:"
-                , spacer
-                , box_ [sizeReqUpdater (\(x, _) -> (x, height 13)), alignBottom] $ checkbox stcFlag
-                ]
-                `styleBasic` [padding 10]
             ]
         , spacer
         , vsplit_
@@ -154,7 +180,7 @@ buildUI _ model = widgetTree
                               [ label "Code" `styleBasic` [padding 5]
                               , scroll
                                   ( hstack
-                                      [ themeSwitch lineNumberTheme $ box_ [sizeReqUpdater (\(_, y) -> (width 50, y))] $ textArea_ lineNumbers [readOnly] `nodeEnabled` False
+                                      [ themeSwitch (snd $ activeTheme (_isDarkMode model)) $ box_ [sizeReqUpdater (\(_, y) -> (width 50, y))] $ textArea_ lineNumbers [readOnly] `nodeEnabled` False
                                       , keystroke_ [("Ctrl-v", PasteCode)] [ignoreChildrenEvts] $ scroll_ [scrollStyle L.textAreaStyle, scrollFwdStyle scrollFwdDefault] $ T.textArea_ code [onChange CodeChanged, acceptTab] UpdateScroll `nodeKey` "Code"
                                       ]
                                   )
@@ -184,14 +210,25 @@ buildUI _ model = widgetTree
         , hstack
             [ label ">>> "
             , keystroke_ [("Enter", ConsoleCommand (_command model == "")), ("Ctrl-v", PasteCommand)] [ignoreChildrenEvts] $ keystroke [("Up", DecMemoryLocation), ("Down", IncMemoryLocation)] $ textField_ command [placeholder "Define / run function, 'clear' to wipe memory", onChange CommandChange]
+            , spacer_ [width 5]
+            , zstack
+              [ image_ (pack $ p </> "icons" </> "light-dark-mode" <.> "png") [fitEither] `styleBasic` [width 32, height 32] -- "Night mode" icon created by Freepik - Flaticon
+              , toggleButton_ " " isDarkMode [toggleButtonOffStyle darkToggleOffStyle] `styleBasic` [bgColor transparent, textColor transparent, border 0 transparent]
+              ]
             ]
         ]
         `styleBasic` [padding 10]
 
+-- Helper for the dark mode toggle's style when pressed (i.e. app currently in dark mode)
+darkToggleOffStyle :: Style
+darkToggleOffStyle = def & L.basic ?~ (def & L.bgColor ?~ transparent)
+
+-- Builds all trace output rows from a trace
 traceRows :: AppModel -> Int -> [Text] -> [WidgetNode AppModel AppEvent]
 traceRows _ _ [] = []
 traceRows model i (t : ts) = traceRow model i t : traceRows model (i + 1) ts
 
+-- Handles events thrown by UI widgets
 handleEvent ::
   WidgetEnv AppModel AppEvent ->
   WidgetNode AppModel AppEvent ->
@@ -201,15 +238,15 @@ handleEvent ::
 handleEvent _ _ model evt = case evt of
   AppInit -> []
   AppIgnore -> []
-  RunCode -> [Task (runCode (_filePath model) (Flags{tracing = _tracingFlag model, verbosity = _verbosityFlag model, dump = unpack (_dumpFlag model), stc = _stcFlag model, visual = True, repl = False}) (unpack $ _code model))]
-  SaveCode -> [Task $ saveCode (_filePath model) (unpack $ _code model)]
-  LoadCode -> [Task $ loadCode (_filePath model)]
+  RunCode -> [Task (runCode (unpack $ _dirFilePath model) fullFilePath (Flags{tracing = _tracingFlag model, verbosity = _verbosityFlag model, dump = unpack (_dumpFlag model), stc = _stcFlag model, visual = True, repl = False}) (unpack $ _code model))]
+  SaveCode -> [Task $ saveCode fullFilePath (unpack $ _code model)]
+  LoadCode -> [Task $ loadCode fullFilePath]
   WriteCode c -> [Model (model & code .~ c & lineNumbers .~ getLineNumbers c)]
   WriteTraceAndError toPrint err -> [Model (model & errors .~ append err "\n\n" & trace .~ toPrint & visibleTrace .~ replicate (Prelude.length $ Data.Text.lines toPrint) False)]
   OpenTrace i -> [Model (model & (visibleTrace .~ (_visibleTrace model & element i .~ not (_visibleTrace model !! i))))]
   CodeChanged c -> [Model (model & lineNumbers .~ getLineNumbers c)]
   ConsoleCommand True -> []
-  ConsoleCommand False -> [Model (model & commandMemory .~ _commandMemory model ++ [""] & memoryLocation .~ length (_commandMemory model)), Task $ consoleCommand model (Flags{tracing = _tracingFlag model, verbosity = _verbosityFlag model, dump = unpack (_dumpFlag model), stc = _stcFlag model, visual = True, repl = False}) (unpack $ _code model) (unpack $ _command model)]
+  ConsoleCommand False -> [Model (model & commandMemory .~ _commandMemory model ++ [""] & memoryLocation .~ length (_commandMemory model)), Task $ consoleCommand model (Flags{tracing = _tracingFlag model, verbosity = _verbosityFlag model, dump = unpack (_dumpFlag model), stc = _stcFlag model, visual = True, repl = False}) (unpack $ _dirFilePath model) (takeDirectory fullFilePath) (unpack $ _code model) (unpack $ _command model)]
   ClearCommand c -> [Model (model & command .~ "" & errors .~ append (_errors model) c)]
   WriteTraceAndErrorConsole toPrint err -> [Model (model & errors .~ err & trace .~ toPrint & visibleTrace .~ replicate (Prelude.length $ Data.Text.lines toPrint) False & command .~ "" & errors .~ append (_errors model) (append (append (append (head (Data.Text.lines toPrint)) "\n\n") (last (Data.Text.lines toPrint))) "\n\n"))]
   UpdateScroll msg -> [Message "CodeScroll" msg]
@@ -220,52 +257,64 @@ handleEvent _ _ model evt = case evt of
   IncMemoryLocation -> [Model (model & memoryLocation .~ min (_memoryLocation model + 1) (length (_commandMemory model) - 1) & command .~ (_commandMemory model !! min (_memoryLocation model + 1) (length (_commandMemory model) - 1)))]
   DecMemoryLocation -> [Model (model & memoryLocation .~ max (_memoryLocation model - 1) 0 & command .~ (_commandMemory model !! max (_memoryLocation model - 1) 0))]
   CommandChange t -> [Model (model & commandMemory .~ (_commandMemory model & element (_memoryLocation model) .~ t))]
+  where
+    fullFilePath = unpack (_dirFilePath model) </> unpack (_filePath model)
 
-runCode :: Text -> Flags -> String -> IO AppEvent
-runCode fp fs s = do
+-- Event called when pressing "Run"
+runCode :: FilePath -> FilePath -> Flags -> String -> IO AppEvent
+runCode dirFP fp fs s = do
   saveCode fp s
-  o <- parseAndEvaluateProject fs s "main"
+  o <- parseAndEvaluateProject fs s (takeDirectory fp) "main"
   case o of
     Left err -> pure (WriteTraceAndError "" (pack err))
     Right (toDump, toPrint, err) -> do
-      dumpCode toDump (dump fs)
+      unless (dump fs == "") $ writeFile (dirFP </> dump fs) toDump
       pure $ WriteTraceAndError (intercalate "\n" (map pack toPrint)) (pack err)
 
-saveCode :: Text -> String -> IO AppEvent
+-- Event called when pressing "Save"
+saveCode :: FilePath -> String -> IO AppEvent
 saveCode "" _ = pure AppIgnore
-saveCode fp s = writeFile (unpack fp) s >> pure AppIgnore
+saveCode fp s = writeFile fp s >> pure AppIgnore
 
-loadCode :: Text -> IO AppEvent
+-- Event called when pressing "Load"
+loadCode :: FilePath -> IO AppEvent
 loadCode "" = pure AppIgnore
 loadCode fp = do
-  c <- System.IO.readFile (unpack fp)
+  c <- System.IO.readFile fp
   pure $ WriteCode (pack c)
 
-dumpCode :: String -> FilePath -> IO ()
-dumpCode toDump fp = unless (fp == "") (writeFile fp toDump)
-
+-- Creates string of newline-separated line numbers
 getLineNumbers :: Text -> Text
 getLineNumbers c = Data.Text.concat [pack (show n ++ "\n") | n <- [1 .. (Prelude.length (Data.Text.lines c))]]
 
-consoleCommand :: AppModel -> Flags -> String -> String -> IO AppEvent
-consoleCommand model fs file s =
+-- Event called when text entered to the console
+consoleCommand :: AppModel -> Flags -> FilePath -> FilePath -> String -> String -> IO AppEvent
+consoleCommand model fs dirFP fp file s = do
+  exePath <- getExecutablePath'
+  let dirPath p = takeDirectory (takeDirectory exePath) </> p
+
   if s == "clear"
-    then writeFile "imports/local-decl" "" >> pure (ClearCommand "Repl declarations cleared\n\n")
+    then writeFile (dirPath "imports/local-decl") "" >> pure (ClearCommand "Repl declarations cleared\n\n")
     else do
       case isFunction (pack s) of
-        Just _ -> runCommand fs file s
+        Just _ -> runCommand fs dirFP fp file s
         Nothing -> addToLocalDecl s >> pure (ClearCommand (append (_command model) "\n\n"))
 
-runCommand :: Flags -> String -> String -> IO AppEvent
-runCommand fs s n = do
-  writeFile "imports/command-line" ("commandLineREPL = " ++ n ++ "\n")
-  o <- parseAndEvaluateProject fs s "commandLineREPL"
+-- Event called when a command is to be executed from the console
+runCommand :: Flags -> FilePath -> FilePath -> String -> String -> IO AppEvent
+runCommand fs dirFP fp s n = do
+  exePath <- getExecutablePath'
+  let dirPath p = takeDirectory (takeDirectory exePath) </> p
+
+  writeFile (dirPath "imports/command-line") ("commandLineREPL = " ++ n ++ "\n")
+  o <- parseAndEvaluateProject fs s fp "commandLineREPL"
   case o of
     Left err -> pure (WriteTraceAndError "" (pack err))
     Right (toDump, toPrint, err) -> do
-      dumpCode toDump (dump fs)
+      unless (dump fs == "") $ writeFile (dirFP </> dump fs) toDump
       pure $ WriteTraceAndErrorConsole (intercalate "\n" (map pack (n : toPrint))) (pack err)
 
+-- Event called when Ctrl+V is detected in the code input
 pasteCode :: IO AppEvent
 pasteCode = do
   t <- getClipboardString
@@ -273,6 +322,7 @@ pasteCode = do
     Nothing -> pure AppIgnore
     Just x -> pure $ PasteToCode (pack x)
 
+-- Event called when Ctrl+V is detected in the console
 pasteCommand :: IO AppEvent
 pasteCommand = do
   t <- getClipboardString
@@ -280,40 +330,46 @@ pasteCommand = do
     Nothing -> pure AppIgnore
     Just x -> pure $ PasteToCommand (pack x)
 
-runApp :: Flags -> [FilePath] -> IO ()
-runApp flags args = do
-  let fp = if null args then "" else head args
-  file <- if null fp then pure "" else System.IO.readFile fp
-  startApp (model (pack fp) flags (pack file)) handleEvent buildUI config
+-- Entry point to the application
+runApp :: Flags -> [String] -> FilePath -> IO ()
+runApp flags args fp = do
+  let fp' = head $ pack (takeDirectory (head args)) `splitOn` pack fp
+  let f = if null args then "" else unpack fp' </> head args
+  file <- if null f then pure "" else System.IO.readFile f
+
+  exePath <- getExecutablePath'
+  let assetPath = takeDirectory (takeDirectory exePath) </> "assets"
+  startApp (model fp' (pack $ head args) flags (pack file)) handleEvent (buildUI assetPath) (config assetPath)
  where
-  config =
+  config p =
     if os == "mingw32"
       then
-        [ appWindowState (MainWindowNormal (850, 500))
+        [ appWindowState (MainWindowNormal (1000, 600))
         , appWindowTitle "Tikka"
-        , appWindowIcon "./assets/icons/lambda.bmp" -- Term icon created by Freepik - Flaticon
-        , appTheme customAppTheme
-        , appFontDef "Regular" "./assets/fonts/Consolas.ttf"
-        , appFontDef "Medium" "./assets/fonts/Consolas.ttf"
-        , appFontDef "Bold" "./assets/fonts/Consolas.ttf"
-        , appFontDef "Italic" "./assets/fonts/Consolas.ttf"
+        , appWindowIcon $ pack $ p </> "icons" </> "lambda" <.> "bmp" -- Term icon created by Freepik - Flaticon
+        , appTheme appLightTheme
+        , appFontDef "Regular" $ pack $ p </> "fonts" </> "Consolas" <.> "ttf"
+        , appFontDef "Medium" $ pack $ p </> "fonts" </> "Consolas" <.> "ttf"
+        , appFontDef "Bold" $ pack $ p </> "fonts" </> "Consolas" <.> "ttf"
+        , appFontDef "Italic" $ pack $ p </> "fonts" </> "Consolas" <.> "ttf"
         , appInitEvent AppInit
         ]
       else
-        [ appWindowState (MainWindowNormal (850, 500))
+        [ appWindowState (MainWindowNormal (1000, 600))
         , appWindowTitle "Tikka"
-        , appWindowIcon "./assets/icons/lambda.bmp" -- Term icon created by Freepik - Flaticon
+        , appWindowIcon $ pack $ p </> "icons" </> "lambda" <.> "bmp" -- Term icon created by Freepik - Flaticon
         , appDisableAutoScale True
-        , appTheme customAppTheme
-        , appFontDef "Regular" "./assets/fonts/Consolas.ttf"
-        , appFontDef "Medium" "./assets/fonts/Consolas.ttf"
-        , appFontDef "Bold" "./assets/fonts/Consolas.ttf"
-        , appFontDef "Italic" "./assets/fonts/Consolas.ttf"
+        , appTheme appLightTheme
+        , appFontDef "Regular" $ pack $ p </> "fonts" </> "Consolas" <.> "ttf"
+        , appFontDef "Medium" $ pack $ p </> "fonts" </> "Consolas" <.> "ttf"
+        , appFontDef "Bold" $ pack $ p </> "fonts" </> "Consolas" <.> "ttf"
+        , appFontDef "Italic" $ pack $ p </> "fonts" </> "Consolas" <.> "ttf"
         , appInitEvent AppInit
         ]
-  model filepath fs c =
+  model fp' f fs c =
     AppModel
-      { _filePath = filepath
+      { _dirFilePath = fp'
+      , _filePath = f
       , _code = c
       , _trace = ""
       , _errors = ""
@@ -326,28 +382,90 @@ runApp flags args = do
       , _command = ""
       , _commandMemory = [""]
       , _memoryLocation = 0
+      , _isDarkMode = True
+      }
+-- Light mode primary color
+lightColor :: Color
+lightColor = rgbHex "f7f7f7"
+
+-- Dark mode primary color
+darkColor :: Color
+darkColor = rgbHex "404040"
+
+-- Highlight color
+highlightColor :: Color
+highlightColor = rgbHex "c27e00"
+
+-- Darker highlight color
+darkHighlightColor :: Color
+darkHighlightColor = rgbHex "c26b00"
+
+-- Lighter highlight color
+lightHighlightColor :: Color
+lightHighlightColor = rgbHex "c28800"
+
+-- Application light theme
+appLightTheme :: Theme
+appLightTheme =
+  baseTheme
+    lightThemeColors
+      { clearColor = lightColor
+      , inputBgBasic = lightColor
+      , inputFocusBorder = highlightColor
+      , btnFocusBorder = highlightColor
+      , btnMainFocusBorder = darkHighlightColor
+      , btnMainBgBasic = highlightColor
+      , btnMainBgHover = lightHighlightColor
+      , btnMainBgFocus = highlightColor
+      , btnMainBgActive = darkHighlightColor
+      , slNormalFocusBorder = highlightColor
+      , slSelectedFocusBorder = highlightColor
       }
 
-lineNumberTheme :: Theme
-lineNumberTheme =
+-- Theme for the line number text box when in light mode
+lineNumberLightTheme :: Theme
+lineNumberLightTheme =
   baseTheme
-    darkThemeColors
-      { inputBgBasic = rgbHex "404040"
-      , inputBgDisabled = rgbHex "404040"
+    lightThemeColors
+      { inputBgBasic = lightColor
+      , inputBgDisabled = lightColor
       , inputTextDisabled = rgbHex "a3a3a3"
-      , inputBorder = rgbHex "404040"
-      , scrollBarBasic = rgbHex "404040"
-      , scrollBarHover = rgbHex "404040"
-      , scrollThumbBasic = rgbHex "404040"
-      , scrollThumbHover = rgbHex "404040"
+      , inputBorder = lightColor
+      , scrollBarBasic = lightColor
+      , scrollBarHover = lightColor
+      , scrollThumbBasic = lightColor
+      , scrollThumbHover = lightColor
       }
 
-customAppTheme :: Theme
-customAppTheme =
+-- Application dark theme
+appDarkTheme :: Theme
+appDarkTheme =
   baseTheme
     darkThemeColors
-      { clearColor = rgbHex "404040"
+      { clearColor = darkColor
       , inputBgBasic = rgbHex "505050"
-      , inputFocusBorder = rgbHex "c27e00"
-      , btnFocusBorder = rgbHex "c27e00"
+      , inputFocusBorder = highlightColor
+      , btnFocusBorder = highlightColor
+      , btnMainFocusBorder = darkHighlightColor
+      , btnMainBgBasic = highlightColor
+      , btnMainBgHover = lightHighlightColor
+      , btnMainBgFocus = highlightColor
+      , btnMainBgActive = darkHighlightColor
+      , slNormalFocusBorder = highlightColor
+      , slSelectedFocusBorder = highlightColor
+      }
+
+-- Theme for the line number text box when in dark mode
+lineNumberDarkTheme :: Theme
+lineNumberDarkTheme =
+  baseTheme
+    darkThemeColors
+      { inputBgBasic = darkColor
+      , inputBgDisabled = darkColor
+      , inputTextDisabled = rgbHex "a3a3a3"
+      , inputBorder = darkColor
+      , scrollBarBasic = darkColor
+      , scrollBarHover = darkColor
+      , scrollThumbBasic = darkColor
+      , scrollThumbHover = darkColor
       }

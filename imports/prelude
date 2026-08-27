@@ -1,14 +1,14 @@
 -- Data types
 
-data Maybe = Just a | Nothing
+data Maybe a = Just a | Nothing
 
-maybe :: b -> (a -> b) -> Maybe -> b
+maybe :: b -> (a -> b) -> Maybe a -> b
 maybe x _ Nothing = x
 maybe _ f (Just y) = f y
 
-data Either = Left a | Right b
+data Either a b = Left a | Right b
 
-either :: (a -> c) -> (b -> c) -> Either -> c
+either :: (a -> c) -> (b -> c) -> Either a b -> c
 either f _ (Left x) = f x
 either _ g (Right y) = g y
 
