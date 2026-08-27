@@ -162,7 +162,7 @@ buildUI p _ model = widgetTree
                     , vstack
                         [ label "STC:"
                         , spacer
-                        , box_ [sizeReqUpdater (\(x, _) -> (x, height 25)), alignBottom] $ checkbox stcFlag `styleBasic` [fgColor highlightColor, hlColor highlightColor]
+                        , box_ [sizeReqUpdater (\(x, _) -> (x, height 34)), alignCenter] $ checkbox stcFlag `styleBasic` [fgColor highlightColor, hlColor highlightColor]
                         ]
                         `styleBasic` [padding 10]
                     ]
