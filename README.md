@@ -45,6 +45,8 @@ Please note: */dist/tikka.exe* is a Windows executable file, and comes with some
 
 ## Building the project
 
+Note: To build for Linux, uncomment the lines at the bottom of *package.yaml* and comment out the similar ones above. Then delete *tikka.cabal* (if it exists) to force Stack to rebuild when running the below command.
+
 This project uses the Haskell Tool Stack, which can be installed [here](https://docs.haskellstack.org/en/stable/install_and_upgrade/). Then the command
 
 `stack build --copy-bins --local-bin-path=./dist`
