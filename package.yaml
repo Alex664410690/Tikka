@@ -35,6 +35,8 @@ dependencies:
 - strict
 - string-interpolate
 - ordered-containers
+- filepath
+- directory
 
 ghc-options:
 - -Wall
