@@ -1,0 +1,24 @@
+{- This file gives a couple of examples of recursive functions - that is, functions which call themselves. Recursive functions are written by
+   defining a "base case" and what to do at each step to reach the base.
+-}
+
+main = factorial 5
+
+-- This is a helper function to make sure that our number is an integer, as Tikka only supports Doubles but the factorial function takes an integer
+-- "isInt" is a function which can be found in 'imports/prelude'
+factorial x = if isInt x then fac x else error "The factorial function only works on integer numbers!"
+
+-- This is the factorial function. See if you understand how it works on paper, and then run it with trace enabled to check you're right!
+-- Note: a function like this really benefits from the different trace levels, as well as the "TRACE" keyword (shown in a later demo)
+fac :: Double -> Double
+fac 0 = 1
+fac x = fac (x - 1) * x
+
+-- This function runs the algorithm in the Collatz conjecture on an integer input, counting the number of steps required to reach 1
+collatz 1 = 0
+collatz n = 1 + if even n then collatz (n / 2) else collatz (3 * n + 1)
+
+-- This function adds 1 to all numbers in a list
+-- It is fact recursive! See the definitions for "map" and "succ" in 'imports/prelude' to find out why
+increment :: [Double] -> [Double]
+increment xs = map succ xs

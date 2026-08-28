@@ -1,0 +1,25 @@
+{- This file introduces Tikka's unique "TRACE{}" blocks, which can be used to reduce the section of code traced during evaluation.
+
+   Note: the "TRACE" keyword can be placed before any code "block" (e.g. one wrapped in parentheses) and it will still work - it
+         can be imagined to be a Haskell function. The use of braces ({}) is only for the sake of clarity.
+-}
+
+main = mergeSort [5, 4, 3, 2, 1]
+
+-- These functions combine to make a sorting algorithm known as 'merge sort'. Note than only "x < y" is inside of a "TRACE" block
+-- and so only steps where that comparison occurs will be shown
+-- Important: the trace will only show on "Full" trace mode (level 4), as all levels below hide operations such as (<).
+merge [] ys = ys
+merge xs [] = xs
+merge (x:xs) (y:ys) = if TRACE{x < y} then x : merge xs (y:ys) 
+    else y : merge (x:xs) ys
+
+mergeSort []  = []
+mergeSort [x] = [x]
+mergeSort xs = merge (mergeSort (take (div (length xs) 2) xs)) 
+    (mergeSort (drop (div (length xs) 2) xs))
+
+-- This custom version of the "map" standard library function prints only steps where the function application "f x" occurs
+traceMap :: (a -> b) -> [a] -> [b]
+traceMap _ [] = []
+traceMap f (x:xs) = TRACE{f x} : traceMap f xs
