@@ -530,21 +530,21 @@ parseDecl (c : cs) = case parse (decl <* eof) "" (pack c) of
     Right ys -> Right (y ++ ys)
   where
     decl =
-      (lookAhead (lexeme "data") *> dataType)
-        <|> (lookAhead (lexeme "import") *> moduleImport)
+      (lookAhead (lexeme "data ") *> dataType)
+        <|> (lookAhead (lexeme "import ") *> moduleImport)
         <|> try typeSig
         <|> funcDecl
 
 -- Throws an error if an imported module tries to import a module
 moduleImport :: Parser (LUT ([Term], Term))
 moduleImport = do
-  lexeme "import"
+  lexeme "import "
   customFailure "Error: Only the module being run can import other modules in Tikka\n       This means that imported modules cannot use the 'import' keyword themselves"
 
 -- Parse a custom datatype declaration
 dataType :: Parser (LUT ([Term], Term))
 dataType = do
-  lexeme "data"
+  lexeme "data "
   n <- identifier'
   ts <- many identifier -- parses polymorphic datatypes in the form 'Maybe a = Just a | Nothing'
   let is = zip ts (typeReadAll 0 ts)

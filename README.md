@@ -15,6 +15,8 @@ The project is built using the Haskell Tool Stack (commonly referred to as just 
 
 All of the code for this project can be found in the *app* directory: *Main.hs* drives the project, *Tikka.hs* contains the code for the interpreter itself, *Application.hs* contains the code for the visual debugger built with Monomer, and *TextAreaScroll.hs* is a modified Monomer TextArea widget (*Monomer.Widgets.Singles.TextArea*, open source) used in the IDE's code editor.
 
+A series of demo files can be found in the *demos* directory, showing some of the differences between Tikka's Haskell and Haskell 2010. Please see the comments in each file for more information, and *imports/prelude* for further examples.
+
 The *imports* directory contains the default modules which are imported by Tikka: *prelude* contains the standard library of Haskell functions, *local-decl* contains any functions declared in the REPL (cleared on startup), and *command-line* contains a function / expression which is executed in the REPL. Finally, the *dist* directory contains the interpreter executable as well as 3 required dll files which are not installed on Windows by default.
 
 ## Running the interpreter

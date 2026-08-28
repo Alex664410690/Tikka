@@ -1,0 +1,18 @@
+{- This file shows the basics of evaluation in Tikka. There are 3 main primitive types, Double, Char and Bool, as well as tuples, lists and
+   custom data types - all of which we will see later. Evaluation is typically seen in one of three ways in Tikka: top-level pattern matching,
+   case expressions and if statements.
+-}
+
+main = topLevel True
+
+-- All three of the following functions have type 'Bool -> Char'. In fact, all three of these functions are near-identical after being "desugared" by the interpreter.
+-- Try adding '--dump=[FILE NAME]' when running Tikka and look in the generated file to confirm this!
+
+topLevel True = 'y'
+topLevel False = 'n'
+
+caseExpression x = case x of
+    True -> 'y'
+    False -> 'n'
+
+ifStatement x = if x then 'y' else 'n'

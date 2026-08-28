@@ -1,0 +1,18 @@
+{- This file shows the basics of Tikka's variant of Haskell. As with any Haskell program, the entry point is the function "main" which must be
+   found in any file run by Tikka. Tikka's "main" function is different however, as it can have any type (which will be output by the program) 
+   and does not require the IO () monad or output functions such as "print" (don't worry about these if this is your first time using Haskell).
+
+   Note: files run by Tikka can have any file extension. We deliberately choose not to use '.hs' (here instead we use '.tikka') to differentiate
+   from typical Haskell files which begin with the "module" keyword.
+-}
+
+main = addFive 2
+
+-- Here we give "addFive" a type signature to say that it is a function which takes a number (a Double, Tikka's number type) and returns a number
+-- Type signatures are not required as Tikka infers them automatically from the function itself, but are sometimes useful for learning or just clarity
+addFive :: Double -> Double 
+addFive x = x + 5
+
+-- addFive can also be written as a "lambda function", which uses the lambda notation "\x ->" to signify an input.
+-- addFive and addFiveLambda will be interpreted identically by Tikka
+addFiveLambda = \x -> x + 5
