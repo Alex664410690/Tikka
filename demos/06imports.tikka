@@ -1,0 +1,16 @@
+import example/toImport.tikka
+
+{- This file shows how to import other files in order to use their functions and data type definitions. This is a simplified version
+   of regular Haskell's "module" system, designed to provide some project structure. Imports must be the first thing found in a file 
+   if used, so cannot come after any definitions, and import locations are relative to the file doing the importing (use '../' to 
+   reference the parent directory).
+
+   Note: imported files must not themselves import other files (to avoid circular dependency isses which Tikka us unable to detect),
+         and must not have a "main" function (which would conflict with the primary "main" function)
+-}
+
+main = importedFunction "Hello"
+
+toBool :: ImportedDT -> Bool
+toBool Yes = True
+toBool No = False

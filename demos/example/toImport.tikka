@@ -1,0 +1,6 @@
+{- This file is being import in '06imports.tikka'! -}
+
+importedFunction :: String -> String
+importedFunction s = s ++ ", World!"
+
+data ImportedDT = Yes | No

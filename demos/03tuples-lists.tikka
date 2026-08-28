@@ -1,0 +1,25 @@
+{- This file shows some examples of how to use tuples and lists in Tikka. In Haskell, tuples are finite data structures storing values of 
+   multiple types, while lists are (potentially infinitely-long) data structures which store data of just one type.
+-}
+
+main = constructTuple (0, "zero", False)
+
+-- Here we see a new type, String! However, a "String" is actually just a list of characters, which could also be represented as "[Char]".
+constructTuple :: Double -> String -> Bool -> (Double, String, Bool)
+constructTuple d s b = (d, s, b)
+
+-- This function uses a "polymorphic" type variable "a", which is simply a way of saying that "a" could be replaced with any other data type.
+-- Therefore depending on what inputs we use, addToList could have type 'Double -> [Double] -> [Double]', 'Char -> String -> String' etc.
+-- The 'cons' operator (:) adds a value to the "head" or front of the list. The 'append' (++) operator is used for concatenating two lists.
+addToList :: a -> [a] -> [a]
+addToList x xs = (x : xs)
+
+-- This function does absolutely nothing! We add the value represented by "x" to the head of the list, and then use the library function "tail" to take everything except the head
+-- Take a look at the range of libary function in 'imports/prelude'
+nothing :: a -> [a] -> [a]
+nothing x xs = tail (x : xs) ++ []
+
+-- This function gives us an infinitely-long (but lazily-evaluated i.e. only getting the values when they are used) list of even numbers
+-- [0 ..] would give a list of all integer numbers, and [0, 2 .. 10] == [0, 2, 4, 6, 8, 10]. Try them out!
+infiniteList :: [Double]
+infiniteList = [0, 2 ..]

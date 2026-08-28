@@ -1,0 +1,26 @@
+{- This file shows how custom data types are defined in Tikka. The standard data types 'Maybe a' and 'Either a b' are defined in
+   'imports/prelude', which we highly recommend taking a look at if you are unfamiliar as they are very commonly used.
+-}
+
+-- Data types are defined with the keyword "data" and then an identifier which starts with a capital letter
+-- This data type has three data constructors, "One", "Two" and "Three", each with a different number of arguments
+data MyType = NoArgs | OneArg Double | TwoArgs Double Char | ThreeArgs Double Char Bool
+
+--main = whichConstructor (TwoArgs 10 'z')
+
+-- We can pattern match to differentiate between different constructors, and do different computations accordingly
+-- Note that as we do not need to use the values stored in our type in the function, we can use a wildcard "_" to disregard them
+whichConstructor :: MyType -> Double
+whichConstructor NoArgs = 0
+whichConstructor (OneArg _) = 1
+whichConstructor (TwoArgs _ _) = 2
+whichConstructor (ThreeArgs _ _ _) = 3
+
+-- Here's an example of a polymorphic data type. The argument "a" given to Tree provides a polymorphic type variable to be used in its constructors, and multiple can be provided if needed
+-- This means that both "Leaf 5" and "Leaf 'c'" are valid trees, and have type 'Tree Double' and 'Tree Char' respectively
+-- To top it all off, this data type has a recursive definition!
+data Tree a = Leaf a | Node Tree Tree
+
+-- As with the data type, this function is also polymorphic - here we've used "t" to represent the type rather than "a", but any (lowercase) variable can be used
+exampleTree :: t -> Tree t
+exampleTree x = Node (Leaf x) (Node (Leaf x) (Leaf x))
