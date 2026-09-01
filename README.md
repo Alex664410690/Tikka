@@ -47,7 +47,50 @@ Please note: */dist/tikka.exe* is a Windows executable file, and comes with some
 
 ## Building the project
 
-Note: To build for Linux, uncomment the lines at the bottom of *package.yaml* and comment out the similar ones above. Then delete *tikka.cabal* (if it exists) to force Stack to rebuild when running the below command.
+### Windows
+
+No specific instructions (yet) simply use the *tikka.exe* in the *./dist* directory which already includes the needed DLL files. If you really want to build it yourself, install the `stack` program (using *[ghcup](https://www.haskell.org/ghcup/)* or *[directly from haskellstack.org](https://docs.haskellstack.org/en/stable/install_and_upgrade/)*).
+
+### Linux
+
+There are several system dependencies you need to get a clean build. The package names may vary between different distros, instructions below are given for *Ubuntu*/*Debian*/*Mint*.
+
+```bash
+apt install haskell-stack git g++ pkgconf \
+    libx11-dev libxrandr-dev libxss-dev libgl-dev \
+    zlib1g-dev libglew-dev libxft-dev libsdl3-dev \
+    libsdl2-compat-dev
+```
+
+Once all the dependencies are installed and you've cloned the repo, delete *tikka.cabal* (if it exists) to force Stack to regenerate it during the build. Now skip ahead to the [Common Build Instructions for All Plaftorms](#common-build-instructions-for-all-platforms).
+
+Details on each dependency required and what step/package requires each:
+
+* haskell-stack -- To build Tikka itself
+* git -- To clone the repo
+* g++ -- This is required for GHC to install correctly and validate
+* pkgconf -- Provides pkg-config binary used by many packages to find libraries
+* libx11-dev -- X11
+* libxrandr-dev -- X11
+* libxss-dev -- X11
+* libgl-dev -- OpenGLRaw
+* zlib1g-dev -- zlib
+* libglew-dev -- nanovg
+* libxft-dev -- nanovg
+* libsdl3-dev -- sdl2
+* libsdl2-compat-dev -- sdl2
+
+### MacOS 
+
+To build for MacOS, you need `stack` (using *[ghcup](https://www.haskell.org/ghcup/)* or *[directly from haskellstack.org](https://docs.haskellstack.org/en/stable/install_and_upgrade/)*) and three libraries to install via [brew](https://www.brew.sh). These are `glew`, `sdl3`, and `sdl2-compat`. These are required for the Haskell packages `nanovg` (which needs `glew`) and the `sdl2` pacakge (which needs the other two) to compile *tikka*.
+
+```bash
+brew install glew sdl3 sdl2-compat
+```
+
+Delete the *tikka.cabal* file if it exists and proceed to the [Common Build Instructions for All Platforms](#common-build-instructions-for-all-platforms) section.
+
+### Common Build Instructions for All Platforms
 
 This project uses the Haskell Tool Stack, which can be installed [here](https://docs.haskellstack.org/en/stable/install_and_upgrade/). Then the command
 

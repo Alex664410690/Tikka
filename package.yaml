@@ -57,21 +57,18 @@ executables:
   tikka:
     main:                Main.hs
     source-dirs:         app
-    ghc-options:
-    - -threaded
-    - -rtsopts
-    - -with-rtsopts=-N
-    - -optl-mconsole
     dependencies:
     - tikka
-
-  # Uncomment this and comment the executable above if on Linux.
-  # tikka:
-  #   main:                Main.hs
-  #   source-dirs:         app
-  #   ghc-options:
-  #   - -threaded
-  #   - -rtsopts
-  #   - -with-rtsopts=-N
-  #   dependencies:
-  #   - tikka
+    when:
+      - condition: os(windows)
+        then:
+          ghc-options:
+          - -threaded
+          - -rtsopts
+          - -with-rtsopts=-N
+          - -optl-mconsole
+        else:
+          ghc-options:
+          - -threaded
+          - -rtsopts
+          - -with-rtsopts=-N
