@@ -3,7 +3,7 @@
 Tikka is an educational interpreter and debugger for a modified subset of Haskell, designed for use in introductory Haskell and wider functional programming courses or for anyone looking to learn the language. The original paper outlining the core features and university-level classroom testing of Tikka can be found [here](https://dl.acm.org/doi/10.1145/3830439.3831274), and in the Proceedings of the 19th ACM SIGPLAN Haskell Symposium. Core features of Tikka include (but are not limited to):
 - a simplified and modified subset of Haskell for new learners (notably excluding type classes and monads);
 - a standard library "Prelude" of predefined operators and functions;
-- Hindley-Milner type checking, in both staticly- and dynamically-type checked modes;
+- Hindley-Milner type checking, in both staticlly- and dynamically-type checked modes;
 - evaluation tracing with step-by-step explanation;
 - a special `TRACE` keyword to enable tracing of only specific sections of code;
 - an interactive Real-Evaluate-Print Loop (REPL); and
@@ -43,11 +43,60 @@ The available verbosity levels of explanation (when the trace is enabled) are:
 3. Concise explanation with details
 4. Conversational explanation
 
-Please note: */dist/tikka.exe* is a Windows executable file, and comes with some required library (*.dll*) files. */dist/tikka* is a Linux binary file, and comes with its own library (*.so*) files. A pre-built executable for MacOS does not currently exist, but if you are able to build Tikka on that platform and are happy sharing it with other users, then please reach out to the [maintainer](alexhobbs.0515@gmail.com).
+Please note: */dist/tikka.exe* is a Windows executable file, and comes with some required library (*.dll*) files. */dist/tikka* is a Linux binary file, and comes with its own library (*.so*) files. We have included pre-built executables for macOS Tahoe and Sequoia, named *dist/tikka-tahoe* and *dist/tikka-sequoia* respectively - replace the usage commands with the correct version, or rebuild yourself by following the instructions below.
 
 ## Building the project
 
-Note: To build for Linux, uncomment the lines at the bottom of *package.yaml* and comment out the similar ones above. Then delete *tikka.cabal* (if it exists) to force Stack to rebuild when running the below command.
+### Windows
+
+No specific instructions (yet) simply use the *tikka.exe* in the *./dist* directory which already includes the needed DLL files. If you really want to build it yourself, install the `stack` program (using *[ghcup](https://www.haskell.org/ghcup/)* or *[directly from haskellstack.org](https://docs.haskellstack.org/en/stable/install_and_upgrade/)*).
+
+### Linux
+
+There are several system dependencies you need to get a clean build. The package names may vary between different distros, instructions below are given for *Ubuntu*/*Debian*/*Mint*.
+
+```bash
+apt install haskell-stack git g++ pkgconf \
+    libx11-dev libxrandr-dev libxss-dev libgl-dev \
+    zlib1g-dev libglew-dev libxft-dev libsdl3-dev \
+    libsdl2-compat-dev
+```
+
+Once all the dependencies are installed and you've cloned the repo, delete *tikka.cabal* (if it exists) to force Stack to regenerate it during the build. Now skip ahead to the [Common Build Instructions for All Plaftorms](#common-build-instructions-for-all-platforms).
+
+Details on each dependency required and what step/package requires each:
+
+* haskell-stack -- To build Tikka itself
+* git -- To clone the repo
+* g++ -- This is required for GHC to install correctly and validate
+* pkgconf -- Provides pkg-config binary used by many packages to find libraries
+* libx11-dev -- X11
+* libxrandr-dev -- X11
+* libxss-dev -- X11
+* libgl-dev -- OpenGLRaw
+* zlib1g-dev -- zlib
+* libglew-dev -- nanovg
+* libxft-dev -- nanovg
+* libsdl3-dev -- sdl2
+* libsdl2-compat-dev -- sdl2
+
+### MacOS 
+
+To build for MacOS, you need `stack` (using *[ghcup](https://www.haskell.org/ghcup/)* or *[directly from haskellstack.org](https://docs.haskellstack.org/en/stable/install_and_upgrade/)*) and three libraries to install via [brew](https://www.brew.sh). These are `glew`, `pkg-config`, `freetype2`, `sdl3` and `sdl2-compat`. These are required for the Haskell packages `nanovg` (which needs the first three) and the `sdl2` package (which needs the other two) to compile *tikka*.
+
+```bash
+brew install glew pkg-config freetype2 sdl3 sdl2-compat
+```
+
+X11 is not natively supported on newer versions of MacOS, so `xquartz` can be used as an X11 server.
+
+```bash
+brew install xquartz
+```
+
+Delete the *tikka.cabal* file if it exists and proceed to the [Common Build Instructions for All Platforms](#common-build-instructions-for-all-platforms) section.
+
+### Common Build Instructions for All Platforms
 
 This project uses the Haskell Tool Stack, which can be installed [here](https://docs.haskellstack.org/en/stable/install_and_upgrade/). Then the command
 
